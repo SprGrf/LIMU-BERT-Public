@@ -7,7 +7,7 @@
 # @Description :
 
 import argparse
-
+import os
 from scipy.special import factorial
 from torch.utils.data import Dataset
 
@@ -17,8 +17,8 @@ from config import create_io_config, load_dataset_stats, TrainConfig, MaskConfig
 """ Utils Functions """
 
 import random
-
 import numpy as np
+from collections import Counter
 import torch
 import sys
 
@@ -38,6 +38,9 @@ def get_device(gpu):
         device = torch.device("cuda:" + gpu if torch.cuda.is_available() else "cpu")
     n_gpu = torch.cuda.device_count()
     print("%s (%d GPUs)" % (device, n_gpu))
+
+
+    # device = 'cpu'
     return device
 
 
@@ -109,20 +112,341 @@ def reshape_data(data, merge):
     if merge == 0:
         return data.reshape(data.shape[0] * data.shape[1], data.shape[2])
     else:
-        return data.reshape(data.shape[0] * data.shape[1] // merge, merge, data.shape[2])
+        # Compute the total number of elements in the first two dimensions
+        total_rows = data.shape[0] * data.shape[1]
+        truncated_rows = (total_rows // merge) * merge  # Find the largest divisible number
 
+        # if truncated_rows < total_rows:
+        #     print(f"Truncating data: from {total_rows} rows to {truncated_rows} rows")
+
+        # Flatten and truncate
+        truncated_data = data.reshape(-1, data.shape[2])[:truncated_rows]  
+
+        # Reshape the truncated data
+        reshaped_data = truncated_data.reshape(truncated_rows // merge, merge, data.shape[2])
+
+        return reshaped_data
 
 def reshape_label(label, merge):
     if merge == 0:
         return label.reshape(label.shape[0] * label.shape[1])
     else:
-        return label.reshape(label.shape[0] * label.shape[1] // merge, merge)
+        # Compute the total number of elements and adjust for divisibility
+        total_rows = label.shape[0] * label.shape[1]
+        truncated_rows = (total_rows // merge) * merge  # Find the largest divisible number
+
+        # if truncated_rows < total_rows:
+        #     print(f"Truncating labels: from {total_rows} rows to {truncated_rows} rows")
+
+        # Flatten and truncate
+        truncated_data = label.reshape(-1)[:truncated_rows]  # Flatten the label data
+
+        # Reshape the truncated data
+        reshaped_data = truncated_data.reshape(truncated_rows // merge, merge)
+
+        return reshaped_data
 
 
 def shuffle_data_label(data, label):
     index = np.arange(data.shape[0])
     np.random.shuffle(index)
     return data[index, ...], label[index, ...]
+
+
+# def select_participants(users_array, special_participant_list, training_rate, seed=None):
+#     """
+#     Selects a percentage of participants from the array such that at least one is in the special list.
+
+#     Args:
+#         users_array (numpy.ndarray): Array of participants.
+#         special_participant_list (list of lists): List of lists of special IDs for different activities.
+#         training_rate (float): Percentage of participants to select (e.g., 0.3 for 30%).
+
+#     Returns:
+#         tuple: (selected_participants, remaining_participants)
+#     """
+#     set_seeds(seed)
+
+#     if not 0 <= training_rate <= 1:
+#         raise ValueError("Percentage must be between 0 and 1.")
+
+
+#     special_sets = [set(special) for special in special_participant_list]
+
+#     while True:
+#         np.random.shuffle(users_array)
+        
+#         num_to_select = int(len(users_array) * training_rate)
+#         train_participants = users_array[:num_to_select]
+#         rest_participants = users_array[num_to_select:]
+#         if all(special_set.intersection(train_participants) for special_set in special_sets):
+#             print("Train participants are ", train_participants)       
+#             print("Test participants are ", rest_participants)       
+#             return train_participants, rest_participants
+        
+#         print("None of the special participants is included in training. Reshuffling...")
+
+
+def select_participants(mode, case_study, users_array, special_participant_list, training_rate, seed=None):
+    """
+    Selects participants for training, validation, and testing, ensuring each group 
+    has at least one participant from the special list.
+
+    Args:
+        users_array (numpy.ndarray): Array of participants.
+        special_participant_list (list of lists): List of lists of special IDs for different activities.
+        training_rate (float): Percentage of participants to select for training (e.g., 0.3 for 30%).
+        seed (int, optional): Random seed for reproducibility.
+
+    Returns:
+        tuple: (train_participants, val_participants, test_participants)
+    """
+    set_seeds(seed)
+
+    if not 0 <= training_rate <= 1:
+        raise ValueError("Percentage must be between 0 and 1.")
+
+    special_sets = [set(special) for special in special_participant_list]
+
+    while True:
+        np.random.shuffle(users_array)
+        
+        # Select training participants
+        num_train = int(len(users_array) * training_rate)
+        train_participants = users_array[:num_train]
+        remaining_participants = users_array[num_train:]
+        
+        if mode =='base':
+            if case_study == 'cv':
+
+                # Split remaining participants into validation and testing
+                mid_index = len(remaining_participants) // 2
+                val_participants = remaining_participants[:mid_index]
+                test_participants = remaining_participants[mid_index:]
+                # Ensure each group contains at least one special participant
+                if (all(special_set.intersection(train_participants) for special_set in special_sets) and
+                    all(special_set.intersection(val_participants) for special_set in special_sets) and
+                    all(special_set.intersection(test_participants) for special_set in special_sets)):
+                    
+                    print("Train participants: ", train_participants)
+                    print("Validation participants: ", val_participants)
+                    print("Test participants: ", test_participants)
+                    
+                    return train_participants, val_participants, test_participants
+                
+                print("Reshuffling as one or more groups lack special participants...")
+            else:
+                raise NotImplementedError
+        else:
+            raise NotImplementedError
+
+def find_files(directory, search_string):
+    matching_files = []  # List to store files that match the condition
+    for root, dirs, files in os.walk(directory):  # Walk through all files in the directory
+        for file in files:
+            if search_string in file:  # Check if the search string is in the filename
+                matching_files.append(os.path.join(root, file))  # Add full path to list
+    return matching_files
+
+
+def accumulate_participant_files(args, name, users_list):
+    if f"data_{args.dataset_version}_{name}.npy" in os.listdir(os.path.join('dataset', args.dataset)):
+        print("Already here, loading file...", os.path.join('dataset', args.dataset, f"data_{args.dataset_version}_{name}.npy"))        
+        data = np.load(os.path.join('dataset', args.dataset, f"data_{args.dataset_version}_{name}.npy")).astype(np.float32)
+        labels = np.load(os.path.join('dataset', args.dataset, f"label_{args.dataset_version}_{name}.npy")).astype(np.float32)
+        return data, labels
+    else:
+        data = []
+        labels = []
+        # Iterate through files in the input folder
+        for participant in users_list:
+            file_name = "P" + f"{participant:03}" + ".data"            
+            print(file_name)
+            file_path = os.path.join('dataset', args.dataset, file_name)
+
+            if not os.path.isfile(file_path):
+                continue  # Skip directories or invalid files
+
+            # Load participant file
+            try:
+                participant_data = np.load(file_path, allow_pickle=True)
+                windows, activity_values, user_values = participant_data
+                # print(type(windows[0]))
+            except Exception as e:
+                print(f"Error loading {file_name}: {e}")
+                continue
+
+            printfirst = False
+            # Process each window (dataframe) and corresponding labels
+            for window, activity, user in zip(windows, activity_values, user_values):
+
+                if printfirst:
+                    print("window is ", window)
+                    print("label is ", activity)
+                    print("user is ", user)
+                # Convert window (dataframe) to numpy array
+                window_data = window.to_numpy(dtype=np.float32)
+
+                # Ensure window_data length is a multiple of args.dataset_cfg.seq_len
+                usable_length = (window_data.shape[0] // args.dataset_cfg.seq_len) * args.dataset_cfg.seq_len
+                if usable_length == 0:
+                    continue  # Skip windows too short for even one sequence
+                window_data = window_data[:usable_length, :]
+
+                # Reshape into sequences of (args.dataset_cfg.seq_len, features)
+                reshaped_data = window_data.reshape(-1, args.dataset_cfg.seq_len, window_data.shape[1])
+
+                # Create corresponding labels
+                activity_label = np.full((reshaped_data.shape[0], args.dataset_cfg.seq_len, 1), activity, dtype=np.int32)
+                user_label = np.full((reshaped_data.shape[0], args.dataset_cfg.seq_len, 1), user, dtype=np.int32)
+                combined_label = np.concatenate((activity_label, user_label), axis=-1)  
+                if printfirst:
+                    print("window is ", window_data)
+                    print("label is ", activity_label)
+                    print("user is ", user_label)
+                    printfirst = False
+                # Append processed data and labels
+                data.append(reshaped_data)
+                labels.append(combined_label)
+
+        # Concatenate all data and labels
+        if data:
+            data = np.concatenate(data, axis=0).astype(np.float32)
+            labels = np.concatenate(labels, axis=0).astype(np.float32)
+
+            # Save to .npy files for next use
+            np.save(os.path.join('dataset', args.dataset, f"data_{args.dataset_version}_{name}.npy"), data)
+            np.save(os.path.join('dataset', args.dataset, f"label_{args.dataset_version}_{name}.npy"), labels)
+            
+            print(f"Data and labels saved and returned. Data shape: {data.shape}, Label shape: {labels.shape}")
+            return data, labels
+        else:
+            print("No data processed. Check input folder and file formats.")
+
+
+def prepare_datasets_participants(args, training_rate=0.8, seed=None):
+
+    """
+    Arguments:
+    - mode: d2d, cv, cross c24
+    - training dataset
+    - split rate
+    - users for each dataset, including special participants
+    
+    I probably dont need to know the test dataset, only the mode
+
+    if d2d:
+        - take the number of participants defined by the split rate, ensuring that special participants are still inside
+        - return train and validation participants from the same dataset
+    elif cv:
+        if users < 10:
+            - apply loocv
+            - sort the list, take the last as validation
+            - shift the list 
+            - exclude the special participant, if they exist, from loocv
+            - return train, valid, test from the same dataset
+        else:
+            - take the split rate required. Again make sure that special participants are inside
+            - return train, valid, test from the same dataset
+    elif cross-c24:
+        - make the split, make sure special participants are inside
+        - return train, valid and the test users that have to be used in testing
+    """
+
+    if args.case_study == "cv":
+        if args.dataset_cfg.user_ids == []:
+            user_ids_array = np.array([i for i in range(1, args.dataset_cfg.user_label_size + 1)])
+        else:
+            user_ids_array = np.array(args.dataset_cfg.user_ids)
+        train_users, valid_users, test_users = select_participants(args.mode, args.case_study, user_ids_array, args.dataset_cfg.required_user_ids, training_rate, seed)
+        
+        # train_users = np.array([12, 25, 1])
+        # valid_users = np.array([47, 48, 2])
+
+        data_train, labels_train = accumulate_participant_files(args, "train", train_users)
+        data_val, labels_val = accumulate_participant_files(args, "val", valid_users)
+        data_test, labels_test = accumulate_participant_files(args, "test", test_users)
+        print("training data shape", data_train.shape)
+        print("training label shape", labels_train.shape)
+        print("validation data shape", data_val.shape)
+        print("validation label shape", labels_val.shape)
+        print("testing data shape", data_test.shape)
+        print("testing label shape", labels_test.shape)
+
+
+        unique_label_train, counts_train = np.unique(labels_train[:, :, :1], return_counts=True)
+        unique_label_vali, counts_vali = np.unique(labels_val[:, :, :1], return_counts=True)
+        unique_label_test, counts_test = np.unique(labels_test[:, :, :1], return_counts=True)
+        print('Train label distribution: ', dict(zip(unique_label_train, counts_train)))
+        print('Validation label distribution: ', dict(zip(unique_label_vali, counts_vali)))
+        print('Test label distribution: ', dict(zip(unique_label_test, counts_test)))
+
+        return data_train, labels_train, data_val, labels_val, data_test, labels_test
+
+    elif args.case_study == "d2d":
+        raise NotImplementedError
+    elif args.case_study == "cross24":
+        raise NotImplementedError
+    else:
+        raise NotImplementedError
+
+
+def balance_dataset(data, labels, ratio=2):
+    """
+    Balances the dataset based on activity labels while keeping user IDs.
+
+    Parameters:
+    - data: NumPy array of shape (num_samples, time_steps, num_features)
+    - labels: NumPy array of shape (num_samples, time_steps, 2) where first column is activity, second is user ID
+    - ratio: Maximum ratio between most and least represented class
+
+    Returns:
+    - balanced_data: NumPy array of shape (new_num_samples, time_steps, num_features)
+    - balanced_labels: NumPy array of shape (new_num_samples, time_steps, 2) (activity + user ID)
+    """
+
+    # Extract unique activity labels per sample (first timestep is enough)
+    unique_activity_labels = labels[:, 0, 0]  # Shape (num_samples,)
+
+    # Count occurrences of each activity (per sample, not per timestep)
+    activity_counts = Counter(unique_activity_labels)
+
+    # Print current distribution
+    print("Current activity label distribution (per sample):")
+    for activity, count in sorted(activity_counts.items()):
+        print(f"Activity {activity}: {count}")
+
+    # Determine balancing criteria
+    min_class_count = min(activity_counts.values())
+    max_allowed_count = min_class_count * ratio
+
+    # Storage for balanced data
+    balanced_data = []
+    balanced_labels = []
+
+    # Process each activity separately
+    for activity in activity_counts:
+        # Get indices of samples belonging to this activity
+        activity_indices = np.where(unique_activity_labels == activity)[0]
+
+        # Limit to max_allowed_count
+        if len(activity_indices) > max_allowed_count:
+            activity_indices = np.random.choice(activity_indices, max_allowed_count, replace=False)
+
+        balanced_data.append(data[activity_indices])
+        balanced_labels.append(labels[activity_indices])  # Keep both activity and user ID
+
+    # Concatenate all balanced samples
+    balanced_data = np.vstack(balanced_data)
+    balanced_labels = np.vstack(balanced_labels)
+
+    print("\nBalanced dataset distribution (per sample):")
+    balanced_counts = Counter(balanced_labels[:, 0, 0])  # Only check first timestep for unique samples
+    for activity, count in sorted(balanced_counts.items()):
+        print(f"Activity {activity}: {count}")
+
+    return balanced_data, balanced_labels
+
 
 
 def prepare_pretrain_dataset(data, labels, training_rate, seed=None):
@@ -177,9 +501,8 @@ def partition_and_reshape(data, labels, label_index=0, training_rate=0.8, vali_r
         data_train, label_train = merge_dataset(data_train, label_train, mode=merge_mode)
         data_test, label_test = merge_dataset(data_test, label_test, mode=merge_mode)
         data_vali, label_vali = merge_dataset(data_vali, label_vali, mode=merge_mode)
-    print('Train Size: %d, Vali Size: %d, Test Size: %d' % (label_train.shape[0], label_vali.shape[0], label_test.shape[0]))
+    # print('Train Size: %d, Vali Size: %d, Test Size: %d' % (label_train.shape[0], label_vali.shape[0], label_test.shape[0]))
     return data_train, label_train, data_vali, label_vali, data_test, label_test
-
 
 def prepare_simple_dataset(data, labels, training_rate=0.2):
     arr = np.arange(data.shape[0])
@@ -196,8 +519,8 @@ def prepare_simple_dataset(data, labels, training_rate=0.2):
     label_num = []
     for i in range(labels_unique.size):
         label_num.append(np.sum(labels == labels_unique[i]))
-    print('Label Size: %d, Unlabel Size: %d. Label Distribution: %s'
-          % (label_train.shape[0], label_test.shape[0], ', '.join(str(e) for e in label_num)))
+    # print('Label Size: %d, Unlabel Size: %d. Label Distribution: %s'
+    #       % (label_train.shape[0], label_test.shape[0], ', '.join(str(e) for e in label_num)))
     return data_train, label_train, data_test, label_test
 
 
@@ -389,9 +712,10 @@ class LIBERTDataset4Pretrain(Dataset):
 
 def handle_argv(target, config_train, prefix):
     parser = argparse.ArgumentParser(description='PyTorch LIMU-BERT Model')
+    parser.add_argument('case_study', type=str, help='The type of study I am running', choices=['cv', 'd2d', 'cross24'])
     parser.add_argument('model_version', type=str, help='Model config')
-    parser.add_argument('dataset', type=str, help='Dataset name', choices=['hhar', 'motion', 'uci', 'shoaib'])
-    parser.add_argument('dataset_version',  type=str, help='Dataset version', choices=['10_100', '20_120'])
+    parser.add_argument('dataset', type=str, help='Dataset name', choices=['hhar', 'motion', 'uci', 'shoaib', 'c24'])
+    parser.add_argument('dataset_version',  type=str, help='Dataset version', choices=['10_100', '20_120', '25_125'])
     parser.add_argument('-g', '--gpu', type=str, default=None, help='Set specific GPU')
     parser.add_argument('-f', '--model_file', type=str, default=None, help='Pretrain model file')
     parser.add_argument('-t', '--train_cfg', type=str, default='./config/' + config_train, help='Training config json file path')
@@ -417,6 +741,7 @@ def handle_argv(target, config_train, prefix):
         sys.exit()
     args.dataset_cfg = dataset_cfg
     args = create_io_config(args, args.dataset, args.dataset_version, pretrain_model=args.model_file, target=target)
+    args.mode = prefix
     return args
 
 
@@ -424,8 +749,8 @@ def handle_argv(target, config_train, prefix):
 def handle_argv_simple():
     parser = argparse.ArgumentParser(description='PyTorch LIMU-BERT Model')
     parser.add_argument('model_file', type=str, default=None, help='Pretrain model file')
-    parser.add_argument('dataset', type=str, help='Dataset name', choices=['hhar', 'motion', 'uci', 'shoaib','merge'])
-    parser.add_argument('dataset_version',  type=str, help='Dataset version', choices=['10_100', '20_120'])
+    parser.add_argument('dataset', type=str, help='Dataset name', choices=['hhar', 'motion', 'uci', 'shoaib', 'c24','merge'])
+    parser.add_argument('dataset_version',  type=str, help='Dataset version', choices=['10_100', '20_120', '25_125'])
     args = parser.parse_args()
     dataset_cfg = load_dataset_stats(args.dataset, args.dataset_version)
     if dataset_cfg is None:
@@ -453,6 +778,17 @@ def load_pretrain_data_config(args):
     data = np.load(args.data_path).astype(np.float32)
     labels = np.load(args.label_path).astype(np.float32)
     return data, labels, train_cfg, model_cfg, mask_cfg, dataset_cfg
+
+def load_pretrain_config(args):
+    model_cfg = args.model_cfg
+    train_cfg = TrainConfig.from_json(args.train_cfg)
+    mask_cfg = MaskConfig.from_json(args.mask_cfg)
+    dataset_cfg = args.dataset_cfg
+    if model_cfg.feature_num > dataset_cfg.dimension:
+        print("Bad Crossnum in model cfg")
+        sys.exit()
+    set_seeds(train_cfg.seed)
+    return train_cfg, model_cfg, mask_cfg, dataset_cfg
 
 
 def load_classifier_data_config(args):

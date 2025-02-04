@@ -150,8 +150,12 @@ class Transformer(nn.Module):
         for _ in range(self.n_layers):
             # h = block(h, mask)
             h = self.attn(h)
+            # print("after attention layer")
+            # print(h.shape)
             h = self.norm1(h + self.proj(h))
+            # print(h.shape)
             h = self.norm2(h + self.pwff(h))
+            # print(h.shape)
         return h
 
 
@@ -169,13 +173,15 @@ class LIMUBertModel4Pretrain(nn.Module):
 
     def forward(self, input_seqs, masked_pos=None):
         h_masked = self.transformer(input_seqs)
+        # print("after transformer size")
+        # print(h_masked.shape)
         if self.output_embed:
             return h_masked
         if masked_pos is not None:
             masked_pos = masked_pos[:, :, None].expand(-1, -1, h_masked.size(-1))
             h_masked = torch.gather(h_masked, 1, masked_pos)
         h_masked = self.activ(self.linear(h_masked))
-        h_masked = self.norm(h_masked)
+        h_masked = self.norm(h_masked)        
         logits_lm = self.decoder(h_masked)
         return logits_lm
 

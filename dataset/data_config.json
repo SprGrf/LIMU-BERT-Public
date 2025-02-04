@@ -57,6 +57,20 @@
         "user_label_index": 2,
         "user_label_size": 10,
         "size": 10500
+    },
+    "c24_25_125": {
+        "sr": 25,
+        "seq_len": 125,
+        "dimension": 3,
+        "activity_label_index": 0,
+        "activity_label_size": 7,
+        "activity_label": [
+            "lying", "sitting", "standing", "walking", "running", "biking" , "stairs"
+        ],
+        "required_user_ids": [[12,47,98,113,131,132],[25,48,127,128,143]],
+        "user_label_index": 1,
+        "user_label_size": 151,
+        "size": 1
     }
 }
 

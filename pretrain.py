@@ -19,16 +19,28 @@ import models, train
 from config import MaskConfig, TrainConfig, PretrainModelConfig
 from models import LIMUBertModel4Pretrain
 from utils import set_seeds, get_device \
-    , LIBERTDataset4Pretrain, handle_argv, load_pretrain_data_config, prepare_classifier_dataset, \
-    prepare_pretrain_dataset, Preprocess4Normalization,  Preprocess4Mask
+    , LIBERTDataset4Pretrain, handle_argv, load_pretrain_data_config, load_pretrain_config, prepare_classifier_dataset, \
+    prepare_pretrain_dataset, prepare_datasets_participants, balance_dataset, Preprocess4Normalization,  Preprocess4Mask
 
 
 def main(args, training_rate):
-    data, labels, train_cfg, model_cfg, mask_cfg, dataset_cfg = load_pretrain_data_config(args)
+    original = False
+
+    if original:
+        data, labels, train_cfg, model_cfg, mask_cfg, dataset_cfg = load_pretrain_data_config(args)
+    else:
+        train_cfg, model_cfg, mask_cfg, dataset_cfg = load_pretrain_config(args)
 
     pipeline = [Preprocess4Normalization(model_cfg.feature_num), Preprocess4Mask(mask_cfg)]
     # pipeline = [Preprocess4Mask(mask_cfg)]
-    data_train, label_train, data_test, label_test = prepare_pretrain_dataset(data, labels, training_rate, seed=train_cfg.seed)
+    
+    if original:
+        data_train, label_train, data_test, label_test = prepare_pretrain_dataset(data, labels, training_rate, seed=train_cfg.seed)
+    else:
+        data_train, label_train, data_test, label_test, _, _ = prepare_datasets_participants(args, training_rate, seed=train_cfg.seed)
+        balanced = True
+        if balanced:
+            data_train, label_train = balance_dataset(data_train, label_train, 1)
 
     data_set_train = LIBERTDataset4Pretrain(data_train, pipeline=pipeline)
     data_set_test = LIBERTDataset4Pretrain(data_test, pipeline=pipeline)
@@ -39,12 +51,14 @@ def main(args, training_rate):
     criterion = nn.MSELoss(reduction='none')
 
     optimizer = torch.optim.Adam(params=model.parameters(), lr=train_cfg.lr)
+    # optimizer = torch.optim.SGD(params=model.parameters(), lr=train_cfg.lr, momentum=0.9)
+
+
     device = get_device(args.gpu)
     trainer = train.Trainer(train_cfg, model, optimizer, args.save_path, device)
 
     def func_loss(model, batch):
         mask_seqs, masked_pos, seqs = batch #
-
         seq_recon = model(mask_seqs, masked_pos) #
         loss_lm = criterion(seq_recon, seqs) # for masked LM
         return loss_lm
@@ -59,8 +73,9 @@ def main(args, training_rate):
         return loss_lm.mean().cpu().numpy()
 
     if hasattr(args, 'pretrain_model'):
-        trainer.pretrain(func_loss, func_forward, func_evaluate, data_loader_train, data_loader_test
-                      , model_file=args.pretrain_model)
+        print("Starting pretraining...")
+        trainer.pretrain(func_loss, func_forward, func_evaluate, data_loader_train, data_loader_test,
+                         model_file=args.pretrain_model)
     else:
         trainer.pretrain(func_loss, func_forward, func_evaluate, data_loader_train, data_loader_test, model_file=None)
 

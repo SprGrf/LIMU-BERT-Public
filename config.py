@@ -105,6 +105,8 @@ class DatasetConfig(NamedTuple):
 
     user_label_index: int = -1  # index of user label
     user_label_size: int = 0  # number of user label
+    user_ids: list = [] # list of user ids for the dataset
+    required_user_ids: list = [] # list of users that, at least one of them, has to be included in training
 
     position_label_index: int = -1  # index of phone position label
     position_label_size: int = 0  # number of position label
@@ -140,12 +142,15 @@ def create_io_config(args, dataset_name, version, pretrain_model=None, target='p
         else:
             model_path = os.path.join(save_path, pretrain_model)
         args.pretrain_model = model_path
+        print("Will preload")
+        print(args.pretrain_model)
     else:
         args.pretrain_model = None
     return args
 
 
 def load_model_config(target, prefix, version
+                    # pretrain_base, base, v3
                       , path_bert='config/limu_bert.json', path_classifier='config/classifier.json'):
     if "bert" not in target: # pretrain or pure classifier
         if "pretrain" in target:

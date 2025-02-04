@@ -5,3 +5,6 @@
 /log/
 /embed/
 #/saved/
+/LIMUBERT/
+__pycache__/
+dataset/c24
