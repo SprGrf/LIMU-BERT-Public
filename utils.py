@@ -228,13 +228,13 @@ def select_participants(mode, case_study, users_array, special_participant_list,
                     all(special_set.intersection(val_participants) for special_set in special_sets) and
                     all(special_set.intersection(test_participants) for special_set in special_sets)):
                     
-                    print("Train participants: ", train_participants)
-                    print("Validation participants: ", val_participants)
-                    print("Test participants: ", test_participants)
+                    # print("Train participants: ", train_participants)
+                    # print("Validation participants: ", val_participants)
+                    # print("Test participants: ", test_participants)
                     
                     return train_participants, val_participants, test_participants
                 
-                print("Reshuffling as one or more groups lack special participants...")
+                # print("Reshuffling as one or more groups lack special participants...")
             else:
                 raise NotImplementedError
         else:
@@ -251,7 +251,7 @@ def find_files(directory, search_string):
 
 def accumulate_participant_files(args, name, users_list):
     if f"data_{args.dataset_version}_{name}.npy" in os.listdir(os.path.join('dataset', args.dataset)):
-        print("Already here, loading file...", os.path.join('dataset', args.dataset, f"data_{args.dataset_version}_{name}.npy"))        
+        # print("Already here, loading file...", os.path.join('dataset', args.dataset, f"data_{args.dataset_version}_{name}.npy"))        
         data = np.load(os.path.join('dataset', args.dataset, f"data_{args.dataset_version}_{name}.npy")).astype(np.float32)
         labels = np.load(os.path.join('dataset', args.dataset, f"label_{args.dataset_version}_{name}.npy")).astype(np.float32)
         return data, labels
@@ -261,7 +261,7 @@ def accumulate_participant_files(args, name, users_list):
         # Iterate through files in the input folder
         for participant in users_list:
             file_name = "P" + f"{participant:03}" + ".data"            
-            print(file_name)
+            # print(file_name)
             file_path = os.path.join('dataset', args.dataset, file_name)
 
             if not os.path.isfile(file_path):
@@ -366,20 +366,20 @@ def prepare_datasets_participants(args, training_rate=0.8, seed=None):
         data_train, labels_train = accumulate_participant_files(args, "train", train_users)
         data_val, labels_val = accumulate_participant_files(args, "val", valid_users)
         data_test, labels_test = accumulate_participant_files(args, "test", test_users)
-        print("training data shape", data_train.shape)
-        print("training label shape", labels_train.shape)
-        print("validation data shape", data_val.shape)
-        print("validation label shape", labels_val.shape)
-        print("testing data shape", data_test.shape)
-        print("testing label shape", labels_test.shape)
+        # print("training data shape", data_train.shape)
+        # print("training label shape", labels_train.shape)
+        # print("validation data shape", data_val.shape)
+        # print("validation label shape", labels_val.shape)
+        # print("testing data shape", data_test.shape)
+        # print("testing label shape", labels_test.shape)
 
 
         unique_label_train, counts_train = np.unique(labels_train[:, :, :1], return_counts=True)
         unique_label_vali, counts_vali = np.unique(labels_val[:, :, :1], return_counts=True)
         unique_label_test, counts_test = np.unique(labels_test[:, :, :1], return_counts=True)
-        print('Train label distribution: ', dict(zip(unique_label_train, counts_train)))
-        print('Validation label distribution: ', dict(zip(unique_label_vali, counts_vali)))
-        print('Test label distribution: ', dict(zip(unique_label_test, counts_test)))
+        # print('Train label distribution: ', dict(zip(unique_label_train, counts_train)))
+        # print('Validation label distribution: ', dict(zip(unique_label_vali, counts_vali)))
+        # print('Test label distribution: ', dict(zip(unique_label_test, counts_test)))
 
         return data_train, labels_train, data_val, labels_val, data_test, labels_test
 
@@ -412,9 +412,10 @@ def balance_dataset(data, labels, ratio=2):
     activity_counts = Counter(unique_activity_labels)
 
     # Print current distribution
-    print("Current activity label distribution (per sample):")
+    # print("Current activity label distribution (per sample):")
     for activity, count in sorted(activity_counts.items()):
-        print(f"Activity {activity}: {count}")
+        pass
+        # print(f"Activity {activity}: {count}")
 
     # Determine balancing criteria
     min_class_count = min(activity_counts.values())
@@ -440,10 +441,11 @@ def balance_dataset(data, labels, ratio=2):
     balanced_data = np.vstack(balanced_data)
     balanced_labels = np.vstack(balanced_labels)
 
-    print("\nBalanced dataset distribution (per sample):")
+    # print("\nBalanced dataset distribution (per sample):")
     balanced_counts = Counter(balanced_labels[:, 0, 0])  # Only check first timestep for unique samples
     for activity, count in sorted(balanced_counts.items()):
-        print(f"Activity {activity}: {count}")
+        pass
+        # print(f"Activity {activity}: {count}")
 
     return balanced_data, balanced_labels
 
@@ -587,6 +589,8 @@ class Preprocess4Normalization(Pipeline):
 
     def __call__(self, instance):
         instance_new = instance.copy()[:, :self.feature_len]
+        if instance_new.shape[1] == 3 and self.norm_acc:
+            instance_new[:, :3] = instance_new[:, :3] / self.acc_norm
         if instance_new.shape[1] >= 6 and self.norm_acc:
             instance_new[:, :3] = instance_new[:, :3] / self.acc_norm
         if instance_new.shape[1] == 9 and self.norm_mag:
@@ -776,6 +780,7 @@ def load_pretrain_data_config(args):
         sys.exit()
     set_seeds(train_cfg.seed)
     data = np.load(args.data_path).astype(np.float32)
+    # data = data[:,:,:3]
     labels = np.load(args.label_path).astype(np.float32)
     return data, labels, train_cfg, model_cfg, mask_cfg, dataset_cfg
 

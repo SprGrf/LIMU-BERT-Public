@@ -30,8 +30,10 @@ def main(args, training_rate):
         data, labels, train_cfg, model_cfg, mask_cfg, dataset_cfg = load_pretrain_data_config(args)
     else:
         train_cfg, model_cfg, mask_cfg, dataset_cfg = load_pretrain_config(args)
-
-    pipeline = [Preprocess4Normalization(model_cfg.feature_num), Preprocess4Mask(mask_cfg)]
+    if args.dataset != 'c24':
+        pipeline = [Preprocess4Normalization(model_cfg.feature_num), Preprocess4Mask(mask_cfg)]
+    else: # C24 is already in Gs
+        pipeline = [Preprocess4Mask(mask_cfg)]
     # pipeline = [Preprocess4Mask(mask_cfg)]
     
     if args.dataset != 'c24':
@@ -40,7 +42,17 @@ def main(args, training_rate):
         data_train, label_train, data_test, label_test, _, _ = prepare_datasets_participants(args, training_rate, seed=train_cfg.seed)
         balanced = True
         if balanced:
-            data_train, label_train = balance_dataset(data_train, label_train, 1)
+            data_train, label_train = balance_dataset(data_train, label_train, 200)
+
+    print("data train shape is", data_train.shape)
+    print("data test shape is", data_test.shape)
+    print("label train shape is", label_train.shape)
+    if data_test.shape[0] > data_train.shape[0]:
+        print("shuffling and cutting")
+        np.random.shuffle(data_test)
+        num_samples = int(0.1*data_train.shape[0])
+        data_test = data_test[:num_samples]
+        print("new data test shape is", data_train.shape)
 
     data_set_train = LIBERTDataset4Pretrain(data_train, pipeline=pipeline)
     data_set_test = LIBERTDataset4Pretrain(data_test, pipeline=pipeline)

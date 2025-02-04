@@ -18,9 +18,9 @@
 	},
 	"base_v3": {
 		"feature_num" : 3,
-		"hidden": 72,
+		"hidden": 28,
 		"hidden_ff": 144,
-		"n_layers": 4,
+		"n_layers": 2,
 		"n_heads": 4,
 		"seq_len": 125
 	}

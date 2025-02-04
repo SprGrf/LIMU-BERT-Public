@@ -55,6 +55,7 @@ class Trainer(object):
                 loss.backward()
                 self.optimizer.step()
                 time_sum += time.time() - start_time
+                
                 global_step += 1
                 loss_sum += loss.item()
 
@@ -69,7 +70,7 @@ class Trainer(object):
             loss_eva = self.run(func_forward, func_evaluate, data_loader_test)
             print('Epoch %d/%d : Average Loss %5.4f. Test Loss %5.4f'
                     % (e + 1, self.cfg.n_epochs, loss_sum / len(data_loader_train), loss_eva))
-            # print("Train execution time: %.5f seconds" % (time_sum / len(self.data_loader)))
+            # print("Train execution time: %.5f seconds" % (time_sum / len(data_loader_train)))
             if loss_eva < best_loss:
                 best_loss = loss_eva
                 model_best = copy.deepcopy(model.state_dict())
