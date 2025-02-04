@@ -2,9 +2,10 @@
 #/dataset/motion/
 #/dataset/hhar/
 #/dataset/shoaib/
-/log/
+/logs/
 /embed/
 #/saved/
 /LIMUBERT/
 __pycache__/
 dataset/c24
+/saved/

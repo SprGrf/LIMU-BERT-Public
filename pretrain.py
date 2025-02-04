@@ -24,9 +24,9 @@ from utils import set_seeds, get_device \
 
 
 def main(args, training_rate):
-    original = False
+    original = True
 
-    if original:
+    if args.dataset != 'c24':
         data, labels, train_cfg, model_cfg, mask_cfg, dataset_cfg = load_pretrain_data_config(args)
     else:
         train_cfg, model_cfg, mask_cfg, dataset_cfg = load_pretrain_config(args)
@@ -34,7 +34,7 @@ def main(args, training_rate):
     pipeline = [Preprocess4Normalization(model_cfg.feature_num), Preprocess4Mask(mask_cfg)]
     # pipeline = [Preprocess4Mask(mask_cfg)]
     
-    if original:
+    if args.dataset != 'c24':
         data_train, label_train, data_test, label_test = prepare_pretrain_dataset(data, labels, training_rate, seed=train_cfg.seed)
     else:
         data_train, label_train, data_test, label_test, _, _ = prepare_datasets_participants(args, training_rate, seed=train_cfg.seed)
