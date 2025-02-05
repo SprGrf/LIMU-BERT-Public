@@ -44,6 +44,18 @@ def get_device(gpu):
     return device
 
 
+def get_sample_weights(y, weights):
+    '''
+    to assign weights to each sample
+    '''
+    label_unique = np.unique(y)
+    sample_weights = []
+    for val in y:
+        idx = np.where(label_unique == val)
+        sample_weights.append(weights[idx])
+    return sample_weights
+
+
 def split_last(x, shape):
     "split the last dimension to given shape"
     shape = list(shape)

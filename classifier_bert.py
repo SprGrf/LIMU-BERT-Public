@@ -19,21 +19,10 @@ from models import BERTClassifier, fetch_classifier
 from plot import plot_matrix
 
 from statistic import stat_acc_f1_rec, stat_results
-from utils import get_device,  handle_argv \
+from utils import get_device,  handle_argv, get_sample_weights \
     , IMUDataset, load_bert_classifier_data_config, load_bert_classifier_config, Preprocess4Normalization, \
     prepare_classifier_dataset, prepare_datasets_participants, balance_dataset
 
-
-def get_sample_weights(y, weights):
-    '''
-    to assign weights to each sample
-    '''
-    label_unique = np.unique(y)
-    sample_weights = []
-    for val in y:
-        idx = np.where(label_unique == val)
-        sample_weights.append(weights[idx])
-    return sample_weights
 
 def bert_classify(args, label_index, training_rate, label_rate, frozen_bert=False, balance=True):
     

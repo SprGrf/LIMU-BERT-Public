@@ -18,7 +18,7 @@ from torch.utils.tensorboard import SummaryWriter
 import models, train
 from config import MaskConfig, TrainConfig, PretrainModelConfig
 from models import LIMUBertModel4Pretrain
-from utils import set_seeds, get_device \
+from utils import set_seeds, get_device, get_sample_weights \
     , LIBERTDataset4Pretrain, handle_argv, load_pretrain_data_config, load_pretrain_config, prepare_classifier_dataset, \
     prepare_pretrain_dataset, prepare_datasets_participants, balance_dataset, Preprocess4Normalization,  Preprocess4Mask
 
@@ -37,27 +37,39 @@ def main(args, training_rate):
     # pipeline = [Preprocess4Mask(mask_cfg)]
     
     if args.dataset != 'c24':
-        data_train, label_train, data_test, label_test = prepare_pretrain_dataset(data, labels, training_rate, seed=train_cfg.seed)
+        data_train, label_train, data_vali, _ = prepare_pretrain_dataset(data, labels, training_rate, seed=train_cfg.seed)
     else:
-        data_train, label_train, data_test, label_test, _, _ = prepare_datasets_participants(args, training_rate, seed=train_cfg.seed)
-        balanced = True
+        data_train, label_train, data_vali, _, _, _ = prepare_datasets_participants(args, training_rate, seed=train_cfg.seed)
+        balanced = False
         if balanced:
             data_train, label_train = balance_dataset(data_train, label_train, 200)
 
     print("data train shape is", data_train.shape)
-    print("data test shape is", data_test.shape)
+    print("data vali shape is", data_vali.shape)
     print("label train shape is", label_train.shape)
-    if data_test.shape[0] > data_train.shape[0]:
+    if data_vali.shape[0] > data_train.shape[0]:
         print("shuffling and cutting")
-        np.random.shuffle(data_test)
+        np.random.shuffle(data_vali)
         num_samples = int(0.1*data_train.shape[0])
-        data_test = data_test[:num_samples]
-        print("new data test shape is", data_train.shape)
+        data_vali = data_vali[:num_samples]
+        print("new data vali shape is", data_vali.shape)
 
+
+
+    ## Sampler dataloader
+    unique_ytrain, counts_ytrain = np.unique(label_train, return_counts=True)
+    print('y_train label distribution: ', dict(zip(unique_ytrain, counts_ytrain)))
+    weights = 100.0 / torch.Tensor(counts_ytrain)
+    weights = weights.double()
+    print('weights of sampler: ', weights)
+    sample_weights = get_sample_weights(label_train, weights)
+    sampler = torch.utils.data.sampler.WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
     data_set_train = LIBERTDataset4Pretrain(data_train, pipeline=pipeline)
-    data_set_test = LIBERTDataset4Pretrain(data_test, pipeline=pipeline)
-    data_loader_train = DataLoader(data_set_train, shuffle=True, batch_size=train_cfg.batch_size)
-    data_loader_test = DataLoader(data_set_test, shuffle=False, batch_size=train_cfg.batch_size)
+    data_loader_train = DataLoader(data_set_train, shuffle=False, batch_size=train_cfg.batch_size, sampler=sampler)
+
+
+    data_set_vali = LIBERTDataset4Pretrain(data_vali, pipeline=pipeline)
+    data_loader_vali = DataLoader(data_set_vali, shuffle=False, batch_size=train_cfg.batch_size)
     model = LIMUBertModel4Pretrain(model_cfg)
 
     criterion = nn.MSELoss(reduction='none')
@@ -86,10 +98,10 @@ def main(args, training_rate):
 
     if hasattr(args, 'pretrain_model'):
         print("Starting pretraining...")
-        trainer.pretrain(func_loss, func_forward, func_evaluate, data_loader_train, data_loader_test,
+        trainer.pretrain(func_loss, func_forward, func_evaluate, data_loader_train, data_loader_vali,
                          model_file=args.pretrain_model)
     else:
-        trainer.pretrain(func_loss, func_forward, func_evaluate, data_loader_train, data_loader_test, model_file=None)
+        trainer.pretrain(func_loss, func_forward, func_evaluate, data_loader_train, data_loader_vali, model_file=None)
 
 
 if __name__ == "__main__":
