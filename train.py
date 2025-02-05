@@ -204,7 +204,7 @@ class Trainer(object):
             model = nn.DataParallel(model)
 
         global_step = 0 # global iteration steps regardless of epochs
-        vali_acc_best = 0.0
+        vali_mr_best = 0.0
         best_stat = None
         model_best = model.state_dict()
         for e in range(self.cfg.n_epochs):
@@ -234,14 +234,14 @@ class Trainer(object):
             print('Epoch %d/%d : Average Loss %5.4f, Accuracy: %0.3f/%0.3f/%0.3f, F1: %0.3f/%0.3f/%0.3f, Mean Recall: %0.3f/%0.3f/%0.3f'
                   % (e+1, self.cfg.n_epochs, loss_sum / len(data_loader_train), train_acc, vali_acc, test_acc, train_f1, vali_f1, test_f1, train_mr, vali_mr, test_mr))
             # print("Train execution time: %.5f seconds" % (time_sum / len(self.data_loader)))
-            if vali_acc > vali_acc_best:
-                vali_acc_best = vali_acc
-                best_stat = (train_acc, vali_acc, test_acc, train_f1, vali_f1, test_f1)
+            if vali_mr > vali_mr_best:
+                vali_mr_best = vali_mr
+                best_stat = (train_acc, vali_acc, test_acc, train_f1, vali_f1, test_f1, train_mr, vali_mr, test_mr)
                 model_best = copy.deepcopy(model.state_dict())
                 self.save(e)
         self.model.load_state_dict(model_best)
         print('The Total Epoch have been reached.')
-        print('Best Accuracy: %0.3f/%0.3f/%0.3f, F1: %0.3f/%0.3f/%0.3f' % best_stat)
+        print('Best Accuracy: %0.3f/%0.3f/%0.3f, F1: %0.3f/%0.3f/%0.3f, Mean Recall: %0.3f/%0.3f/%0.3f' % best_stat)
 
 
     def train_parts(self, args, func_loss, func_forward, func_evaluate, label_rate, label_index, balance, 
@@ -490,7 +490,6 @@ class Trainer(object):
 
     def save(self, i=0):
         """ save current model """
-        print("Saving model")
         if i != 0:
             torch.save(self.model.state_dict(), self.save_path + "_" + str(i) + '.pt')
         else:

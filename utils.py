@@ -216,7 +216,7 @@ def select_participants(mode, case_study, users_array, special_participant_list,
         train_participants = users_array[:num_train]
         remaining_participants = users_array[num_train:]
         
-        if mode =='base':
+        if 'base' in mode :
             if case_study == 'cv':
 
                 # Split remaining participants into validation and testing
@@ -381,6 +381,9 @@ def prepare_datasets_participants(args, training_rate=0.8, seed=None):
         # print('Validation label distribution: ', dict(zip(unique_label_vali, counts_vali)))
         # print('Test label distribution: ', dict(zip(unique_label_test, counts_test)))
 
+        labels_train = labels_train[:, 0, args.dataset_cfg.activity_label_index]
+        labels_test = labels_test[:, 0, args.dataset_cfg.activity_label_index]
+        labels_val = labels_val[:, 0, args.dataset_cfg.activity_label_index]
         return data_train, labels_train, data_val, labels_val, data_test, labels_test
 
     elif args.case_study == "d2d":
@@ -392,62 +395,36 @@ def prepare_datasets_participants(args, training_rate=0.8, seed=None):
 
 
 def balance_dataset(data, labels, ratio=2):
-    """
-    Balances the dataset based on activity labels while keeping user IDs.
-
-    Parameters:
-    - data: NumPy array of shape (num_samples, time_steps, num_features)
-    - labels: NumPy array of shape (num_samples, time_steps, 2) where first column is activity, second is user ID
-    - ratio: Maximum ratio between most and least represented class
-
-    Returns:
-    - balanced_data: NumPy array of shape (new_num_samples, time_steps, num_features)
-    - balanced_labels: NumPy array of shape (new_num_samples, time_steps, 2) (activity + user ID)
-    """
-
-    # Extract unique activity labels per sample (first timestep is enough)
-    unique_activity_labels = labels[:, 0, 0]  # Shape (num_samples,)
-
-    # Count occurrences of each activity (per sample, not per timestep)
+    unique_activity_labels = labels 
     activity_counts = Counter(unique_activity_labels)
 
-    # Print current distribution
     # print("Current activity label distribution (per sample):")
-    for activity, count in sorted(activity_counts.items()):
-        pass
-        # print(f"Activity {activity}: {count}")
+    # for activity, count in sorted(activity_counts.items()):
+    #     print(f"Activity {activity}: {count}")
 
-    # Determine balancing criteria
     min_class_count = min(activity_counts.values())
     max_allowed_count = min_class_count * ratio
 
-    # Storage for balanced data
     balanced_data = []
     balanced_labels = []
 
-    # Process each activity separately
     for activity in activity_counts:
-        # Get indices of samples belonging to this activity
         activity_indices = np.where(unique_activity_labels == activity)[0]
 
-        # Limit to max_allowed_count
         if len(activity_indices) > max_allowed_count:
             activity_indices = np.random.choice(activity_indices, max_allowed_count, replace=False)
 
         balanced_data.append(data[activity_indices])
-        balanced_labels.append(labels[activity_indices])  # Keep both activity and user ID
+        balanced_labels.append(labels[activity_indices].reshape(-1, 1)) 
 
-    # Concatenate all balanced samples
     balanced_data = np.vstack(balanced_data)
     balanced_labels = np.vstack(balanced_labels)
+    print(balanced_labels.shape)
+    # balanced_counts = Counter(balanced_labels)  
+    # for activity, count in sorted(balanced_counts.items()):
+    #     print(f"Activity {activity}: {count}")
 
-    # print("\nBalanced dataset distribution (per sample):")
-    balanced_counts = Counter(balanced_labels[:, 0, 0])  # Only check first timestep for unique samples
-    for activity, count in sorted(balanced_counts.items()):
-        pass
-        # print(f"Activity {activity}: {count}")
-
-    return balanced_data, balanced_labels
+    return balanced_data, balanced_labels.reshape(-1)
 
 
 
@@ -816,6 +793,7 @@ def load_classifier_config(args):
 
 def load_bert_classifier_data_config(args):
     model_bert_cfg, model_classifier_cfg = args.model_cfg
+    print(model_bert_cfg)
     train_cfg = TrainConfig.from_json(args.train_cfg)
     dataset_cfg = args.dataset_cfg
     if model_bert_cfg.feature_num > dataset_cfg.dimension:
@@ -826,6 +804,16 @@ def load_bert_classifier_data_config(args):
     labels = np.load(args.label_path).astype(np.float32)
     return data, labels, train_cfg, model_bert_cfg, model_classifier_cfg, dataset_cfg
 
+def load_bert_classifier_config(args):
+    model_bert_cfg, model_classifier_cfg = args.model_cfg
+    print(model_bert_cfg)
+    train_cfg = TrainConfig.from_json(args.train_cfg)
+    dataset_cfg = args.dataset_cfg
+    if model_bert_cfg.feature_num > dataset_cfg.dimension:
+        print("Bad feature_num in model cfg")
+        sys.exit()
+    set_seeds(train_cfg.seed)
+    return train_cfg, model_bert_cfg, model_classifier_cfg, dataset_cfg
 
 def count_model_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
