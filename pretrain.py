@@ -7,7 +7,7 @@
 # @Description :
 import argparse
 import sys
-
+import wandb
 import numpy as np
 import torch
 import torch.nn as nn
@@ -23,13 +23,19 @@ from utils import set_seeds, get_device, get_sample_weights \
     prepare_pretrain_dataset, prepare_datasets_participants, balance_dataset, Preprocess4Normalization,  Preprocess4Mask
 
 
-def main(args, training_rate):
-    original = True
+def main(args, training_rate, balance=False, balance_ratio=0):
+
+    wandb.init(project='pretraining', entity='spgaryf')
+
 
     if args.dataset != 'c24':
         data, labels, train_cfg, model_cfg, mask_cfg, dataset_cfg = load_pretrain_data_config(args)
     else:
         train_cfg, model_cfg, mask_cfg, dataset_cfg = load_pretrain_config(args)
+
+    wandb.config.balance = balance
+    wandb.config.balance_ratio = balance_ratio
+
     if args.dataset != 'c24':
         pipeline = [Preprocess4Normalization(model_cfg.feature_num), Preprocess4Mask(mask_cfg)]
     else: # C24 is already in Gs
@@ -40,9 +46,8 @@ def main(args, training_rate):
         data_train, label_train, data_vali, _ = prepare_pretrain_dataset(data, labels, training_rate, seed=train_cfg.seed)
     else:
         data_train, label_train, data_vali, _, _, _ = prepare_datasets_participants(args, training_rate, seed=train_cfg.seed)
-        balanced = False
-        if balanced:
-            data_train, label_train = balance_dataset(data_train, label_train, 200)
+        if balance:
+            data_train, label_train = balance_dataset(data_train, label_train, balance_ratio)
 
     print("data train shape is", data_train.shape)
     print("data vali shape is", data_vali.shape)
@@ -103,9 +108,10 @@ def main(args, training_rate):
     else:
         trainer.pretrain(func_loss, func_forward, func_evaluate, data_loader_train, data_loader_vali, model_file=None)
 
-
 if __name__ == "__main__":
     mode = "base"
+    balance = True
+    balance_ratio = 100
     args = handle_argv('pretrain_' + mode, 'pretrain.json', mode)
     training_rate = 0.8
-    main(args, training_rate)
+    main(args, training_rate, balance = balance, balance_ratio = balance_ratio)

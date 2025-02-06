@@ -24,7 +24,7 @@ from utils import get_device,  handle_argv, get_sample_weights \
     prepare_classifier_dataset, prepare_datasets_participants, balance_dataset
 
 
-def bert_classify(args, label_index, training_rate, label_rate, frozen_bert=False, balance=True):
+def bert_classify(args, label_index, training_rate, label_rate, frozen_bert=False, balance=True, balance_ratio=100):
     
     if args.dataset != 'c24':
         data, labels, train_cfg, model_bert_cfg, model_classifier_cfg, dataset_cfg = load_bert_classifier_data_config(args)
@@ -41,7 +41,7 @@ def bert_classify(args, label_index, training_rate, label_rate, frozen_bert=Fals
     else:
         data_train, label_train, data_vali, label_vali, data_test, label_test = prepare_datasets_participants(args, training_rate, seed=train_cfg.seed)
         if balance:
-            data_train, label_train = balance_dataset(data_train, label_train, 200)
+            data_train, label_train = balance_dataset(data_train, label_train, balance_ratio)
 
 
     print("training data shape", data_train.shape)
@@ -75,13 +75,14 @@ def bert_classify(args, label_index, training_rate, label_rate, frozen_bert=Fals
     data_loader_vali = DataLoader(data_set_vali, shuffle=False, batch_size=train_cfg.batch_size)
 
 
-    ## Weighted loss part
+    # # Weighted loss part
     # class_weights = compute_class_weight('balanced', classes=np.unique(label_train), y=label_train)
     # class_weights = torch.tensor(class_weights, dtype=torch.float32).to(get_device(args.gpu))
     # criterion = nn.CrossEntropyLoss(weight=class_weights)
 
-
+    # Normal loss
     criterion = nn.CrossEntropyLoss()
+
     classifier = fetch_classifier(method, model_classifier_cfg, input=model_bert_cfg.hidden, output=label_num)
     # print(classifier)
     model = BERTClassifier(model_bert_cfg, classifier=classifier, frozen_bert=frozen_bert)
@@ -113,7 +114,8 @@ def bert_classify(args, label_index, training_rate, label_rate, frozen_bert=Fals
 if __name__ == "__main__":
     train_rate = 0.8
     label_rate = 1.0
-    balance = False
+    balance = True
+    balance_ratio = 100
     frozen_bert = True
     method = "base_gru"
     args = handle_argv('bert_classifier_' + method, 'bert_classifier_train.json', method)
@@ -122,7 +124,7 @@ if __name__ == "__main__":
     label_names, label_num = load_dataset_label_names(args.dataset_cfg, args.label_index)
     print(label_names)
     label_test, label_estimate_test = bert_classify(args, args.label_index, train_rate, label_rate
-                                                    , frozen_bert=frozen_bert, balance=balance)
+                                                    , frozen_bert=frozen_bert, balance=balance, balance_ratio=balance_ratio)
 
 
     

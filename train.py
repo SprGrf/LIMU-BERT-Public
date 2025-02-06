@@ -10,6 +10,7 @@ import os
 import time
 from tqdm import tqdm
 import random
+import wandb
 
 import numpy as np
 import torch
@@ -28,6 +29,9 @@ class Trainer(object):
         self.optimizer = optimizer
         self.save_path = save_path
         self.device = device # device name
+        wandb.config.learning_rate = self.cfg.lr
+        wandb.config.batch_size = self.cfg.batch_size
+        wandb.config.epochs = self.cfg.n_epochs
 
     def pretrain(self, func_loss, func_forward, func_evaluate
               , data_loader_train, data_loader_test, model_file=None, data_parallel=False):
@@ -40,6 +44,7 @@ class Trainer(object):
         global_step = 0 # global iteration steps regardless of epochs
         best_loss = 1e6
         model_best = model.state_dict()
+        wandb.watch(model, log='all')
 
         for e in range(self.cfg.n_epochs):
             loss_sum = 0. # the sum of iteration losses to get average loss in every epoch
@@ -70,6 +75,7 @@ class Trainer(object):
             loss_eva = self.run(func_forward, func_evaluate, data_loader_test)
             print('Epoch %d/%d : Average Loss %5.4f. Test Loss %5.4f'
                     % (e + 1, self.cfg.n_epochs, loss_sum / len(data_loader_train), loss_eva))
+            wandb.log({'train_loss': loss_sum / len(data_loader_train),'valid_loss': loss_eva, 'epoch': e + 1})
             # print("Train execution time: %.5f seconds" % (time_sum / len(data_loader_train)))
             if loss_eva < best_loss:
                 best_loss = loss_eva
@@ -77,6 +83,7 @@ class Trainer(object):
                 self.save(0)
         model.load_state_dict(model_best)
         print('The Total Epoch have been reached.')
+        wandb.finish()
         # self.save(global_step)
 
     # def run(self, func_forward, func_evaluate, data_loader, model_file=None, data_parallel=False, load_self=False, save_path=None):
