@@ -35,6 +35,8 @@ def main(args, training_rate, balance=False, balance_ratio=0):
 
     wandb.config.balance = balance
     wandb.config.balance_ratio = balance_ratio
+    wandb.config.hidden = model_cfg.hidden
+    wandb.config.n_layers = model_cfg.n_layers
 
     if args.dataset != 'c24':
         pipeline = [Preprocess4Normalization(model_cfg.feature_num), Preprocess4Mask(mask_cfg)]
@@ -110,7 +112,7 @@ def main(args, training_rate, balance=False, balance_ratio=0):
 
 if __name__ == "__main__":
     mode = "base"
-    balance = True
+    balance = False
     balance_ratio = 100
     args = handle_argv('pretrain_' + mode, 'pretrain.json', mode)
     training_rate = 0.8
