@@ -1,6 +1,6 @@
 {
     "seed": 3431,
-    "batch_size": 128,
+    "batch_size": 64,
     "lr": 1e-4,
     "n_epochs": 700,
     "warmup": 0.1,

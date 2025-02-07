@@ -394,7 +394,7 @@ def prepare_datasets_participants(args, training_rate=0.8, seed=None):
         # print('Test label distribution: ', dict(zip(unique_label_test, counts_test)))
 
         labels_train = labels_train[:, 0, args.dataset_cfg.activity_label_index]
-        labels_test = labels_test[:, 0, args.dataset_cfg.activity_label_index]
+        # labels_test = labels_test[:, 0, args.dataset_cfg.activity_label_index]
         labels_val = labels_val[:, 0, args.dataset_cfg.activity_label_index]
         return data_train, labels_train, data_val, labels_val, data_test, labels_test
 
@@ -404,6 +404,21 @@ def prepare_datasets_participants(args, training_rate=0.8, seed=None):
         raise NotImplementedError
     else:
         raise NotImplementedError
+
+def separate_data_and_labels_by_user(data, labels):
+    unique_users = np.unique(labels[:, 1])  
+    user_data = []  
+    user_labels = []  
+    
+    for user in unique_users:  
+    
+        user_data_samples = data[labels[:, 1] == user]
+        user_label_samples = labels[labels[:, 1] == user]
+        
+        user_data.append(user_data_samples)
+        user_labels.append(user_label_samples)
+    
+    return user_data, user_labels
 
 
 def balance_dataset(data, labels, ratio=2):

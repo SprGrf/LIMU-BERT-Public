@@ -203,13 +203,14 @@ class Trainer(object):
 
 
     def train(self, func_loss, func_forward, func_evaluate, data_loader_train, data_loader_test, data_loader_vali
-              , model_file=None, data_parallel=False, load_self=False):
+              , test_dataloaders, model_file=None, data_parallel=False, load_self=False):
         """ Train Loop """
         self.load(model_file, load_self)
         model = self.model.to(self.device)
         if data_parallel: # use Data Parallelism with Multi-GPU
             model = nn.DataParallel(model)
 
+        wandb.watch(model, log='all')
         global_step = 0 # global iteration steps regardless of epochs
         vali_mr_best = 0.0
         best_stat = None
@@ -238,9 +239,26 @@ class Trainer(object):
             train_acc, train_f1, train_mr = self.run(func_forward, func_evaluate, data_loader_train)
             test_acc, test_f1, test_mr = self.run(func_forward, func_evaluate, data_loader_test)
             vali_acc, vali_f1, vali_mr = self.run(func_forward, func_evaluate, data_loader_vali)
-            print('Epoch %d/%d : Average Loss %5.4f, Accuracy: %0.3f/%0.3f/%0.3f, F1: %0.3f/%0.3f/%0.3f, Mean Recall: %0.3f/%0.3f/%0.3f'
-                  % (e+1, self.cfg.n_epochs, loss_sum / len(data_loader_train), train_acc, vali_acc, test_acc, train_f1, vali_f1, test_f1, train_mr, vali_mr, test_mr))
+            sum_test_mr = 0 
+            for test_dl in test_dataloaders:
+                _, _, test_mr_single = self.run(func_forward, func_evaluate, test_dl)
+                sum_test_mr += test_mr_single
+            sum_test_mr = sum_test_mr/len(test_dataloaders)
+            print('Epoch %d/%d : Average Loss %5.4f, Accuracy: %0.3f/%0.3f/%0.3f, F1: %0.3f/%0.3f/%0.3f, Mean Recall: %0.3f/%0.3f/%0.3f, MRS: %0.3f'
+                  % (e+1, self.cfg.n_epochs, loss_sum / len(data_loader_train), train_acc, vali_acc, test_acc, train_f1, vali_f1, test_f1, train_mr, vali_mr, test_mr, sum_test_mr))
             # print("Train execution time: %.5f seconds" % (time_sum / len(self.data_loader)))
+            wandb.log({'train_loss': loss_sum / len(data_loader_train),
+                       'train_acc': train_acc,
+                       'train_f1': train_f1,
+                       'train_mr': train_mr,
+                       'test_acc': test_acc,
+                       'test_f1': test_f1,
+                       'test_mr': test_mr,
+                       'vali_acc': vali_acc,
+                       'vali_f1': vali_f1,
+                       'vali_mr': vali_mr,
+                       'mean_mr': sum_test_mr,
+                         'epoch': e + 1})
             if vali_mr > vali_mr_best:
                 vali_mr_best = vali_mr
                 best_stat = (train_acc, vali_acc, test_acc, train_f1, vali_f1, test_f1, train_mr, vali_mr, test_mr)
