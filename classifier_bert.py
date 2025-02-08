@@ -49,10 +49,8 @@ def bert_classify(args, label_index, training_rate, label_rate, frozen_bert=Fals
 
     label_test = label_test_full[:, 0, args.dataset_cfg.activity_label_index]    
  
- 
- 
- 
-    pipeline = [Preprocess4Normalization(model_bert_cfg.feature_num)]
+    norm_acc = False if args.dataset == 'c24' else True
+    pipeline = [Preprocess4Normalization(model_bert_cfg.feature_num, norm_acc=norm_acc)]
 
     separated_data_test, separated_label_test = separate_data_and_labels_by_user(data_test, label_test_full[:, 0, :])
     test_dataloaders = []
@@ -126,9 +124,16 @@ def bert_classify(args, label_index, training_rate, label_rate, frozen_bert=Fals
         stat = stat_acc_f1_rec(label.cpu().numpy(), predicts.cpu().numpy())
         return stat
 
+    ## For training 
     trainer.train(func_loss, func_forward, func_evaluate, data_loader_train, data_loader_test,  data_loader_vali
                         , test_dataloaders, model_file=args.pretrain_model, load_self=True)
     label_estimate_test = trainer.run(func_forward, None, data_loader_test)
+    
+    
+    ## For evaluation
+    # label_estimate_test = trainer.run(func_forward, None, data_loader_test, model_file=args.pretrain_model, load_self=True)
+    
+    
     return label_test, label_estimate_test
 
 
@@ -139,7 +144,8 @@ if __name__ == "__main__":
     balance_ratio = 500
     frozen_bert = True
     method = "base_gru"
-    args = handle_argv('bert_classifier_' + method, 'bert_classifier_train.json', method)
+    # args = handle_argv('bert_classifier_' + method, 'bert_classifier_train.json', method)
+    args = handle_argv('evaluate_bert_' + method, 'bert_classifier_train.json', method)
     if args.label_index != -1:
         label_index = args.label_index
     label_names, label_num = load_dataset_label_names(args.dataset_cfg, args.label_index)

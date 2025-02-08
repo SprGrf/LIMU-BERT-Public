@@ -141,6 +141,8 @@ def create_io_config(args, dataset_name, version, pretrain_model=None, target='p
             model_path = os.path.join('saved', 'pretrain_' + target.split('_')[2] + "_" + dataset_name + "_" + version, pretrain_model)
         else:
             model_path = os.path.join(save_path, pretrain_model)
+        if "evaluate" in target:
+            model_path = os.path.join('saved', 'bert_classifier_' + target.split('_')[2] + '_' + target.split('_')[3] + "_" + dataset_name + "_" + version, pretrain_model)
         args.pretrain_model = model_path
         print("Will preload")
         print(args.pretrain_model)
