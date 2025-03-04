@@ -19,37 +19,37 @@ from models import BERTClassifier, fetch_classifier
 from plot import plot_matrix
 
 from statistic import stat_acc_f1_rec, stat_results
-from utils import get_device,  handle_argv, get_sample_weights, separate_data_and_labels_by_user, \
+from utils import set_seeds, get_device,  handle_argv, get_sample_weights, separate_data_and_labels_by_user, \
     IMUDataset, load_bert_classifier_data_config, load_bert_classifier_config, Preprocess4Normalization, \
     prepare_classifier_dataset, prepare_datasets_participants, balance_dataset
 
 
-def bert_classify(args, label_index, training_rate, label_rate, frozen_bert=False, balance=True, balance_ratio=100):
+def bert_classify(args, label_index, training_rate, rnd=None, frozen_bert=False, balance=True, balance_ratio=100):
     wandb.init(project='classifier', entity='spgaryf')
     wandb.config.balance = balance
     wandb.config.balance_ratio = balance_ratio
     wandb.config.method = method
 
-    if args.dataset != 'c24':
-        data, labels, train_cfg, model_bert_cfg, model_classifier_cfg, dataset_cfg = load_bert_classifier_data_config(args)
-    else:
-        train_cfg, model_bert_cfg, model_classifier_cfg, dataset_cfg = load_bert_classifier_config(args)
+    # if args.dataset != 'C24':
+    #     data, labels, train_cfg, model_bert_cfg, model_classifier_cfg, dataset_cfg = load_bert_classifier_data_config(args)
+    # else:
+    train_cfg, model_bert_cfg, model_classifier_cfg, dataset_cfg = load_bert_classifier_config(args)
     
     label_names, label_num = load_dataset_label_names(dataset_cfg, label_index)
 
-    if args.dataset != 'c24':
-        data_train, label_train, data_vali, label_vali, data_test, label_test \
-            = prepare_classifier_dataset(data, labels, label_index=label_index, training_rate=training_rate,
-                                        label_rate=label_rate, merge=model_classifier_cfg.seq_len, seed=train_cfg.seed
-                                        , balance=balance)    
-    else:
-        data_train, label_train, data_vali, label_vali, data_test, label_test_full = prepare_datasets_participants(args, training_rate, seed=train_cfg.seed)
-        if balance:
-            data_train, label_train = balance_dataset(data_train, label_train, balance_ratio)
+    # if args.dataset != 'C24':
+    #     data_train, label_train, data_vali, label_vali, data_test, label_test \
+    #         = prepare_classifier_dataset(data, labels, label_index=label_index, training_rate=training_rate,
+    #                                     label_rate=label_rate, merge=model_classifier_cfg.seq_len, seed=train_cfg.seed
+    #                                     , balance=balance)    
+    # else:
+    data_train, label_train, data_vali, label_vali, data_test, label_test_full = prepare_datasets_participants(args, training_rate, seed=train_cfg.seed)
+    if balance:
+        data_train, label_train = balance_dataset(data_train, label_train, balance_ratio)
 
     label_test = label_test_full[:, 0, args.dataset_cfg.activity_label_index]    
  
-    norm_acc = False if args.dataset == 'c24' else True
+    norm_acc = False if args.dataset == 'C24' else True
     pipeline = [Preprocess4Normalization(model_bert_cfg.feature_num, norm_acc=norm_acc)]
 
     separated_data_test, separated_label_test = separate_data_and_labels_by_user(data_test, label_test_full[:, 0, :])
@@ -89,13 +89,14 @@ def bert_classify(args, label_index, training_rate, label_rate, frozen_bert=Fals
     data_loader_vali = DataLoader(data_set_vali, shuffle=False, batch_size=train_cfg.batch_size)
 
 
-    # # Weighted loss part
-    # class_weights = compute_class_weight('balanced', classes=np.unique(label_train), y=label_train)
-    # class_weights = torch.tensor(class_weights, dtype=torch.float32).to(get_device(args.gpu))
-    # criterion = nn.CrossEntropyLoss(weight=class_weights)
+    ## Weighted loss part
+    class_weights = compute_class_weight('balanced', classes=np.unique(label_train), y=label_train)
+    class_weights = torch.tensor(class_weights, dtype=torch.float32).to(get_device(args.gpu))
+    print("class weights are: ", class_weights)
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
 
-    # Normal loss
-    criterion = nn.CrossEntropyLoss()
+    # ## Normal loss
+    # criterion = nn.CrossEntropyLoss()
 
     classifier = fetch_classifier(method, model_classifier_cfg, input=model_bert_cfg.hidden, output=label_num)
     print(classifier)
@@ -124,14 +125,18 @@ def bert_classify(args, label_index, training_rate, label_rate, frozen_bert=Fals
         stat = stat_acc_f1_rec(label.cpu().numpy(), predicts.cpu().numpy())
         return stat
 
-    ## For training 
+    ## For training
+    if rnd: 
+        pretrained_encoder_path = args.pretrain_model + "_round_" + str(rnd)
+    else:
+        pretrained_encoder_path = args.pretrain_model
     trainer.train(func_loss, func_forward, func_evaluate, data_loader_train, data_loader_test,  data_loader_vali
-                        , test_dataloaders, model_file=args.pretrain_model, load_self=True)
+                        , test_dataloaders, model_file=pretrained_encoder_path, load_self=True)
     label_estimate_test = trainer.run(func_forward, None, data_loader_test)
     
     
-    ## For evaluation
-    # label_estimate_test = trainer.run(func_forward, None, data_loader_test, model_file=args.pretrain_model, load_self=True)
+    # For evaluation
+    label_estimate_test = trainer.run(func_forward, None, data_loader_test, model_file=args.pretrain_model, load_self=True)
     
     
     return label_test, label_estimate_test
@@ -139,21 +144,36 @@ def bert_classify(args, label_index, training_rate, label_rate, frozen_bert=Fals
 
 if __name__ == "__main__":
     train_rate = 0.8
-    label_rate = 1.0
     balance = True
     balance_ratio = 500
     frozen_bert = True
     method = "base_gru"
-    # args = handle_argv('bert_classifier_' + method, 'bert_classifier_train.json', method)
-    args = handle_argv('evaluate_bert_' + method, 'bert_classifier_train.json', method)
+    args = handle_argv('bert_classifier_' + method, 'bert_classifier_train.json', method)
+    # args = handle_argv('evaluate_bert_' + method, 'bert_classifier_train.json', method)
     if args.label_index != -1:
         label_index = args.label_index
     label_names, label_num = load_dataset_label_names(args.dataset_cfg, args.label_index)
     print(label_names)
-    label_test, label_estimate_test = bert_classify(args, args.label_index, train_rate, label_rate
+    set_seeds(10)
+    if args.case_study == "cv":
+        loocv = False
+        if args.dataset == "C24":
+            rounds = 1 # just one round with the presplit C24, 100 for training, 51 for testing
+            print("C24, only doing one round...")            
+        else:
+            rounds = 10
+        if args.dataset_cfg.user_label_size <= 10 or (args.dataset_cfg.user_ids and len(args.dataset_cfg.user_ids) <= 10):                
+            print("Applying L.O.O.CV.")
+            loocv = True
+        total_users = len(args.dataset_cfg.user_ids) if args.dataset_cfg.user_ids else args.dataset_cfg.user_label_size
+        print("total users are ",total_users)
+        for round in range(min(total_users,rounds)):
+            print("ROUND ", round)              
+            args.save_path += "_round_" + str(round)
+            label_test, label_estimate_test = bert_classify(args, args.label_index, train_rate, rnd=round
                                                     , frozen_bert=frozen_bert, balance=balance, balance_ratio=balance_ratio)
 
 
     
-    acc, matrix, f1 = stat_results(label_test, label_estimate_test)
-    matrix_norm = plot_matrix(matrix, label_names)
+        acc, matrix, f1 = stat_results(label_test, label_estimate_test)
+        matrix_norm = plot_matrix(matrix, label_names)

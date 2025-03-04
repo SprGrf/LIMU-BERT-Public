@@ -106,6 +106,7 @@ class DatasetConfig(NamedTuple):
     user_label_index: int = -1  # index of user label
     user_label_size: int = 0  # number of user label
     user_ids: list = [] # list of user ids for the dataset
+    test_user_ids: list = [] # list of test user ids for the dataset
     required_user_ids: list = [] # list of users that, at least one of them, has to be included in training
 
     position_label_index: int = -1  # index of phone position label

@@ -34,7 +34,7 @@ class Trainer(object):
         wandb.config.epochs = self.cfg.n_epochs
 
     def pretrain(self, func_loss, func_forward, func_evaluate
-              , data_loader_train, data_loader_test, model_file=None, data_parallel=False):
+              , data_loader_train, data_loader_test, model_file=None, data_parallel=False, sample_weights=None):
         """ Train Loop """
         self.load(model_file)
         model = self.model.to(self.device)
@@ -45,16 +45,26 @@ class Trainer(object):
         best_loss = 1e6
         model_best = model.state_dict()
         wandb.watch(model, log='all')
-
+        
+        if sample_weights:
+            sample_weights = torch.tensor(sample_weights, dtype=torch.float32).to(self.device)
+        
+        patience = 100
+        best_epoch = 0
         for e in range(self.cfg.n_epochs):
             loss_sum = 0. # the sum of iteration losses to get average loss in every epoch
             time_sum = 0.0
             self.model.train()
             for i, batch in enumerate(data_loader_train):
-                batch = [t.to(self.device) for t in batch]
                 start_time = time.time()
                 self.optimizer.zero_grad()
-                loss = func_loss(model, batch)
+                batch = [t.to(self.device) for t in batch]
+                indices = batch[3]
+                if sample_weights:
+                    batch_weights = sample_weights[indices].to(self.device) 
+                    loss = func_loss(model, batch, batch_weights)
+                else:
+                    loss = func_loss(model, batch)
 
                 loss = loss.mean()# mean() for Data Parallelism
                 loss.backward()
@@ -81,51 +91,19 @@ class Trainer(object):
                 best_loss = loss_eva
                 model_best = copy.deepcopy(model.state_dict())
                 self.save(0)
+                best_epoch = e
+            if (e - best_epoch) > patience:
+                print('Patience exceeded.')
+                model.load_state_dict(model_best)
+                # wandb.run._backend.cleanup()                
+                # wandb.finish(exit_code=0)
+                return
         model.load_state_dict(model_best)
         print('The Total Epoch have been reached.')
-        wandb.finish()
+        wandb.finish(exit_code=0)
+        return
         # self.save(global_step)
 
-    # def run(self, func_forward, func_evaluate, data_loader, model_file=None, data_parallel=False, load_self=False, save_path=None):
-    #     """ Evaluation Loop """
-    #     self.model.eval() # evaluation mode
-    #     self.load(model_file, load_self=load_self)
-    #     # print(count_model_parameters(self.model))
-    #     model = self.model.to(self.device)
-    #     if data_parallel: # use Data Parallelism with Multi-GPU
-    #         model = nn.DataParallel(model)
-
-
-    #     results_fp = open(save_path, "ab")
-        
-    #     time_start = time.time()
-
-    #     for batch in data_loader:
-    #         batch = [t.to(self.device) for t in batch]
-    #         with torch.no_grad():
-    #             start_time = time.time()
-    #             result, label = func_forward(model, batch)
-
-    #             # Move to CPU and convert to NumPy immediately
-    #             result_np = result.cpu().numpy()
-    #             label_np = label.cpu().numpy()
-
-    #             # Save batch directly to disk (append mode)
-    #             np.save(results_fp, result_np)
-
-    #         # Clear memory
-    #         del result, label, result_np, label_np
-    #         torch.cuda.empty_cache()
-
-    #     print("Eval execution time: %.5f seconds" % (time.time() - time_start ))
-    #     if func_evaluate:
-    #         pass
-    #         # return func_evaluate(torch.cat(labels, 0), torch.cat(results, 0))
-    #     else:
-    #         # Close file pointers
-    #         print("saving")
-    #         results_fp.close()
-    #         return 
 
     def run(self, func_forward, func_evaluate, data_loader, model_file=None, data_parallel=False, load_self=False):
         """ Evaluation Loop """
@@ -259,11 +237,11 @@ class Trainer(object):
                        'vali_mr': vali_mr,
                        'mean_mr': sum_test_mr,
                          'epoch': e + 1})
+            self.save(e)
             if vali_mr > vali_mr_best:
                 vali_mr_best = vali_mr
                 best_stat = (train_acc, vali_acc, test_acc, train_f1, vali_f1, test_f1, train_mr, vali_mr, test_mr)
                 model_best = copy.deepcopy(model.state_dict())
-                self.save(e)
         self.model.load_state_dict(model_best)
         print('The Total Epoch have been reached.')
         print('Best Accuracy: %0.3f/%0.3f/%0.3f, F1: %0.3f/%0.3f/%0.3f, Mean Recall: %0.3f/%0.3f/%0.3f' % best_stat)

@@ -19,61 +19,59 @@ import models, train
 from config import MaskConfig, TrainConfig, PretrainModelConfig
 from models import LIMUBertModel4Pretrain
 from utils import set_seeds, get_device, get_sample_weights \
-    , LIBERTDataset4Pretrain, handle_argv, load_pretrain_data_config, load_pretrain_config, prepare_classifier_dataset, \
-    prepare_pretrain_dataset, prepare_datasets_participants, balance_dataset, Preprocess4Normalization,  Preprocess4Mask
+    , LIBERTDataset4Pretrain, handle_argv, load_pretrain_config, \
+    prepare_datasets_participants, balance_dataset, Preprocess4Normalization,  Preprocess4Mask, \
+    Preprocess4Rotation, Preprocess4Scaling, Preprocess4Negation, Preprocess4TimeWarp, Preprocess4Flip, Preprocess4Shuffle
 
 
-def main(args, training_rate, balance=False, balance_ratio=0):
-
+def main(args, training_rate, balance=False, balance_ratio=0, loocv=False, round=None):
     wandb.init(project='pretraining', entity='spgaryf')
 
-
-    if args.dataset != 'c24':
-        data, labels, train_cfg, model_cfg, mask_cfg, dataset_cfg = load_pretrain_data_config(args)
-    else:
-        train_cfg, model_cfg, mask_cfg, dataset_cfg = load_pretrain_config(args)
+    train_cfg, model_cfg, mask_cfg, dataset_cfg = load_pretrain_config(args)
 
     wandb.config.balance = balance
     wandb.config.balance_ratio = balance_ratio
     wandb.config.hidden = model_cfg.hidden
     wandb.config.n_layers = model_cfg.n_layers
 
-    if args.dataset != 'c24':
-        pipeline = [Preprocess4Normalization(model_cfg.feature_num), Preprocess4Mask(mask_cfg)]
-    else: # C24 is already in Gs
-        pipeline = [Preprocess4Mask(mask_cfg)]
-    # pipeline = [Preprocess4Mask(mask_cfg)]
     
-    if args.dataset != 'c24':
-        data_train, label_train, data_vali, _ = prepare_pretrain_dataset(data, labels, training_rate, seed=train_cfg.seed)
-    else:
-        data_train, label_train, data_vali, _, _, _ = prepare_datasets_participants(args, training_rate, seed=train_cfg.seed)
-        if balance:
-            data_train, label_train = balance_dataset(data_train, label_train, balance_ratio)
+    norm_acc = False if args.dataset == 'C24' else True
+    pipeline = [Preprocess4Normalization(model_cfg.feature_num, norm_acc=norm_acc),
+            Preprocess4Rotation(), Preprocess4Mask(mask_cfg)]
+        
+    data_train, label_train, data_vali, _, _, _ = prepare_datasets_participants(args, training_rate, seed=train_cfg.seed, loocv=loocv, round=round)
+    if balance:
+        data_train, label_train = balance_dataset(data_train, label_train, balance_ratio)
 
-    print("data train shape is", data_train.shape)
-    print("data vali shape is", data_vali.shape)
-    print("label train shape is", label_train.shape)
-    if data_vali.shape[0] > data_train.shape[0]:
-        print("shuffling and cutting")
-        np.random.shuffle(data_vali)
-        num_samples = int(0.1*data_train.shape[0])
-        data_vali = data_vali[:num_samples]
-        print("new data vali shape is", data_vali.shape)
+    # print("data train shape is", data_train.shape)
+    # print("data vali shape is", data_vali.shape)
+    # print("label train shape is", label_train.shape)
+    # if data_vali.shape[0] > data_train.shape[0]:
+    #     print("shuffling and cutting")
+    #     np.random.shuffle(data_vali)
+    #     num_samples = int(0.1*data_train.shape[0])
+    #     data_vali = data_vali[:num_samples]
+    #     print("new data vali shape is", data_vali.shape)
 
 
 
     ## Sampler dataloader
     unique_ytrain, counts_ytrain = np.unique(label_train, return_counts=True)
     print('y_train label distribution: ', dict(zip(unique_ytrain, counts_ytrain)))
+    data_set_train = LIBERTDataset4Pretrain(data_train, pipeline=pipeline)
+
+    
+    # ## Weighted sampler dataloader
     weights = 100.0 / torch.Tensor(counts_ytrain)
     weights = weights.double()
     print('weights of sampler: ', weights)
     sample_weights = get_sample_weights(label_train, weights)
     sampler = torch.utils.data.sampler.WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
-    data_set_train = LIBERTDataset4Pretrain(data_train, pipeline=pipeline)
-    data_loader_train = DataLoader(data_set_train, shuffle=False, batch_size=train_cfg.batch_size, sampler=sampler)
+    data_loader_train = DataLoader(data_set_train, shuffle=False, batch_size=train_cfg.batch_size, sampler=sampler)   
 
+
+    ## Normal Dataloader
+    # data_loader_train = DataLoader(data_set_train, shuffle=True, batch_size=train_cfg.batch_size)
 
     data_set_vali = LIBERTDataset4Pretrain(data_vali, pipeline=pipeline)
     data_loader_vali = DataLoader(data_set_vali, shuffle=False, batch_size=train_cfg.batch_size)
@@ -89,13 +87,23 @@ def main(args, training_rate, balance=False, balance_ratio=0):
     trainer = train.Trainer(train_cfg, model, optimizer, args.save_path, device)
 
     def func_loss(model, batch):
-        mask_seqs, masked_pos, seqs = batch #
-        seq_recon = model(mask_seqs, masked_pos) #
-        loss_lm = criterion(seq_recon, seqs) # for masked LM
+        mask_seqs, masked_pos, seqs, _ = batch
+        seq_recon = model(mask_seqs, masked_pos)
+        loss_lm = criterion(seq_recon, seqs)
         return loss_lm
 
+    def weighted_func_loss(model, batch, batch_weights):
+        mask_seqs, masked_pos, seqs, _ = batch
+        seq_recon = model(mask_seqs, masked_pos)
+        loss_lm = criterion(seq_recon, seqs)
+        # print(loss_lm)
+        loss_lm = loss_lm.mean(dim=1)
+        # print(loss_lm)
+        weighted_loss = loss_lm * batch_weights.unsqueeze(1)
+        return weighted_loss
+
     def func_forward(model, batch):
-        mask_seqs, masked_pos, seqs = batch
+        mask_seqs, masked_pos, seqs, _ = batch
         seq_recon = model(mask_seqs, masked_pos)
         return seq_recon, seqs
 
@@ -108,12 +116,40 @@ def main(args, training_rate, balance=False, balance_ratio=0):
         trainer.pretrain(func_loss, func_forward, func_evaluate, data_loader_train, data_loader_vali,
                          model_file=args.pretrain_model)
     else:
-        trainer.pretrain(func_loss, func_forward, func_evaluate, data_loader_train, data_loader_vali, model_file=None)
+        trainer.pretrain(func_loss, func_forward, func_evaluate, data_loader_train, data_loader_vali, 
+                         model_file=None)
 
+    # if hasattr(args, 'pretrain_model'):
+    #     print("Starting pretraining...")
+    #     trainer.pretrain(weighted_func_loss, func_forward, func_evaluate, data_loader_train, data_loader_vali,
+    #                      model_file=args.pretrain_model, sample_weights=sample_weights)
+    # else:
+    #     trainer.pretrain(weighted_func_loss, func_forward, func_evaluate, data_loader_train, data_loader_vali, 
+    #                      model_file=None, sample_weights=sample_weights)
+        
 if __name__ == "__main__":
     mode = "base"
     balance = False
-    balance_ratio = 100
+    balance_ratio = 1
     args = handle_argv('pretrain_' + mode, 'pretrain.json', mode)
     training_rate = 0.8
-    main(args, training_rate, balance = balance, balance_ratio = balance_ratio)
+    set_seeds(10)
+    if args.case_study == "cv":
+        loocv = False
+        if args.dataset == "C24":
+            rounds = 1 # just one round with the presplit C24, 100 for training, 51 for testing
+            print("C24, only doing one round...")            
+        else:
+            rounds = 10
+        if args.dataset_cfg.user_label_size <= 10 or (args.dataset_cfg.user_ids and len(args.dataset_cfg.user_ids) <= 10):                
+            print("Applying L.O.O.CV.")
+            loocv = True
+        total_users = len(args.dataset_cfg.user_ids) if args.dataset_cfg.user_ids else args.dataset_cfg.user_label_size
+        print("total users are ",total_users)
+        for round in range(min(total_users,rounds)):
+            print("ROUND ", round)              
+            args.save_path += "_round_" + str(round)
+            main(args, training_rate, balance = balance, balance_ratio = balance_ratio, loocv=loocv, round=round)
+    elif args.case_study == "d2d":
+        args.save_path += "_d2d"
+        main(args, training_rate, balance = balance, balance_ratio = balance_ratio)

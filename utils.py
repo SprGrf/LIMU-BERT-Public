@@ -9,6 +9,9 @@
 import argparse
 import os
 from scipy.special import factorial
+from scipy.stats import special_ortho_group
+from scipy.interpolate import CubicSpline
+
 from torch.utils.data import Dataset
 
 from config import create_io_config, load_dataset_stats, TrainConfig, MaskConfig, load_model_config
@@ -199,7 +202,7 @@ def shuffle_data_label(data, label):
 #         print("None of the special participants is included in training. Reshuffling...")
 
 
-def select_participants(mode, case_study, users_array, special_participant_list, training_rate, seed=None):
+def select_participants(users_array, special_participant_list, training_rate, test=False, loocv=False, round=None):
     """
     Selects participants for training, validation, and testing, ensuring each group 
     has at least one participant from the special list.
@@ -211,46 +214,59 @@ def select_participants(mode, case_study, users_array, special_participant_list,
         seed (int, optional): Random seed for reproducibility.
 
     Returns:
-        tuple: (train_participants, val_participants, test_participants)
+        lists of users
     """
-    set_seeds(seed)
-
     if not 0 <= training_rate <= 1:
         raise ValueError("Percentage must be between 0 and 1.")
 
     special_sets = [set(special) for special in special_participant_list]
 
-    while True:
-        np.random.shuffle(users_array)
+    if not loocv:
+        while True:
+            np.random.shuffle(users_array)
+            if test:
+                num_train = int(len(users_array) * training_rate)
+                num_remaining = len(users_array) - num_train
+                num_val = num_remaining // 2
+                train_participants = users_array[:num_train]
+                val_participants = users_array[num_train:num_train + num_val]
+                test_participants = users_array[num_train + num_val:]
         
-        # Select training participants
-        num_train = int(len(users_array) * training_rate)
-        train_participants = users_array[:num_train]
-        remaining_participants = users_array[num_train:]
-        
-        if 'base' in mode :
-            if case_study == 'cv':
-
-                # Split remaining participants into validation and testing
-                mid_index = len(remaining_participants) // 2
-                val_participants = remaining_participants[:mid_index]
-                test_participants = remaining_participants[mid_index:]
-                # Ensure each group contains at least one special participant
                 if (all(special_set.intersection(train_participants) for special_set in special_sets) and
                     all(special_set.intersection(val_participants) for special_set in special_sets) and
                     all(special_set.intersection(test_participants) for special_set in special_sets)):
-                    
-                    # print("Train participants: ", train_participants)
-                    # print("Validation participants: ", val_participants)
-                    # print("Test participants: ", test_participants)
-                    
+                    print("train users are", train_participants)
+                    print("validation users are", val_participants)
+                    print("test users are", test_participants)
                     return train_participants, val_participants, test_participants
-                
-                # print("Reshuffling as one or more groups lack special participants...")
+                print("Reshuffling as one or more groups lack special participants...")
             else:
-                raise NotImplementedError
+                num_train = int(len(users_array) * training_rate)
+                train_participants = users_array[:num_train]
+                val_participants = users_array[num_train:]
+                if (all(special_set.intersection(train_participants) for special_set in special_sets) and
+                    all(special_set.intersection(val_participants) for special_set in special_sets)):
+                    print("train users are", sorted(train_participants))
+                    print("validation users are", sorted(val_participants))
+                    print("number of validation users", len(val_participants))
+
+                    return train_participants, val_participants, []
+                print("Reshuffling as one or more groups lack special participants...")      
+    else:
+        if round == 0:
+            reordered_users_array = users_array 
         else:
-            raise NotImplementedError
+            reordered_users_array = users_array[-round:] + users_array[:-round] 
+        train_participants = reordered_users_array[:-2]
+        val_participants = reordered_users_array[-2]
+        test_participants = reordered_users_array[-1]
+
+        print("train users are", sorted(train_participants))
+        print("validation users are", sorted(val_participants))
+        print("test users are", sorted(test_participants))
+        return train_participants, val_participants, test_participants
+
+
 
 def find_files(directory, search_string):
     matching_files = []  # List to store files that match the condition
@@ -262,81 +278,82 @@ def find_files(directory, search_string):
 
 
 def accumulate_participant_files(args, name, users_list):
-    if f"data_{args.dataset_version}_{name}.npy" in os.listdir(os.path.join('dataset', args.dataset)):
-        # print("Already here, loading file...", os.path.join('dataset', args.dataset, f"data_{args.dataset_version}_{name}.npy"))        
-        data = np.load(os.path.join('dataset', args.dataset, f"data_{args.dataset_version}_{name}.npy")).astype(np.float32)
-        labels = np.load(os.path.join('dataset', args.dataset, f"label_{args.dataset_version}_{name}.npy")).astype(np.float32)
+    # if f"data_{args.dataset_version}_{name}.npy" in os.listdir(os.path.join('dataset', args.dataset)):
+    #     # print("Already here, loading file...", os.path.join('dataset', args.dataset, f"data_{args.dataset_version}_{name}.npy"))        
+    #     data = np.load(os.path.join('dataset', args.dataset, f"data_{args.dataset_version}_{name}.npy")).astype(np.float32)
+    #     labels = np.load(os.path.join('dataset', args.dataset, f"label_{args.dataset_version}_{name}.npy")).astype(np.float32)
+    #     return data, labels
+    # else:
+    data = []
+    labels = []
+    # Iterate through files in the input folder
+    for participant in users_list:
+        print(participant)
+        file_name = "P" + f"{participant:03}" + ".data"            
+        # print(file_name)
+        file_path = os.path.join('dataset', args.dataset, file_name)
+
+        if not os.path.isfile(file_path):
+            continue  # Skip directories or invalid files
+
+        # Load participant file
+        try:
+            participant_data = np.load(file_path, allow_pickle=True)
+            windows, activity_values, user_values = participant_data
+            # print(type(windows[0]))
+        except Exception as e:
+            print(f"Error loading {file_name}: {e}")
+            continue
+
+        printfirst = False
+        # Process each window (dataframe) and corresponding labels
+        for window, activity, user in zip(windows, activity_values, user_values):
+
+            if printfirst:
+                print("window is ", window)
+                print("label is ", activity)
+                print("user is ", user)
+            # Convert window (dataframe) to numpy array
+            window_data = window.to_numpy(dtype=np.float32)
+
+            # Ensure window_data length is a multiple of args.dataset_cfg.seq_len
+            usable_length = (window_data.shape[0] // args.dataset_cfg.seq_len) * args.dataset_cfg.seq_len
+            if usable_length == 0:
+                continue  # Skip windows too short for even one sequence
+            window_data = window_data[:usable_length, :]
+
+            # Reshape into sequences of (args.dataset_cfg.seq_len, features)
+            reshaped_data = window_data.reshape(-1, args.dataset_cfg.seq_len, window_data.shape[1])
+
+            # Create corresponding labels
+            activity_label = np.full((reshaped_data.shape[0], args.dataset_cfg.seq_len, 1), activity, dtype=np.int32)
+            user_label = np.full((reshaped_data.shape[0], args.dataset_cfg.seq_len, 1), user, dtype=np.int32)
+            combined_label = np.concatenate((activity_label, user_label), axis=-1)  
+            if printfirst:
+                print("window is ", window_data)
+                print("label is ", activity_label)
+                print("user is ", user_label)
+                printfirst = False
+            # Append processed data and labels
+            data.append(reshaped_data)
+            labels.append(combined_label)
+
+    # Concatenate all data and labels
+    if data:
+        data = np.concatenate(data, axis=0).astype(np.float32)
+        labels = np.concatenate(labels, axis=0).astype(np.float32)
+
+        # # Save to .npy files for next use
+        # np.save(os.path.join('dataset', args.dataset, f"data_{args.dataset_version}_{name}.npy"), data)
+        # np.save(os.path.join('dataset', args.dataset, f"label_{args.dataset_version}_{name}.npy"), labels)
+        
+        print(f"Data and labels saved and returned. Data shape: {data.shape}, Label shape: {labels.shape}")
         return data, labels
     else:
-        data = []
-        labels = []
-        # Iterate through files in the input folder
-        for participant in users_list:
-            file_name = "P" + f"{participant:03}" + ".data"            
-            # print(file_name)
-            file_path = os.path.join('dataset', args.dataset, file_name)
-
-            if not os.path.isfile(file_path):
-                continue  # Skip directories or invalid files
-
-            # Load participant file
-            try:
-                participant_data = np.load(file_path, allow_pickle=True)
-                windows, activity_values, user_values = participant_data
-                # print(type(windows[0]))
-            except Exception as e:
-                print(f"Error loading {file_name}: {e}")
-                continue
-
-            printfirst = False
-            # Process each window (dataframe) and corresponding labels
-            for window, activity, user in zip(windows, activity_values, user_values):
-
-                if printfirst:
-                    print("window is ", window)
-                    print("label is ", activity)
-                    print("user is ", user)
-                # Convert window (dataframe) to numpy array
-                window_data = window.to_numpy(dtype=np.float32)
-
-                # Ensure window_data length is a multiple of args.dataset_cfg.seq_len
-                usable_length = (window_data.shape[0] // args.dataset_cfg.seq_len) * args.dataset_cfg.seq_len
-                if usable_length == 0:
-                    continue  # Skip windows too short for even one sequence
-                window_data = window_data[:usable_length, :]
-
-                # Reshape into sequences of (args.dataset_cfg.seq_len, features)
-                reshaped_data = window_data.reshape(-1, args.dataset_cfg.seq_len, window_data.shape[1])
-
-                # Create corresponding labels
-                activity_label = np.full((reshaped_data.shape[0], args.dataset_cfg.seq_len, 1), activity, dtype=np.int32)
-                user_label = np.full((reshaped_data.shape[0], args.dataset_cfg.seq_len, 1), user, dtype=np.int32)
-                combined_label = np.concatenate((activity_label, user_label), axis=-1)  
-                if printfirst:
-                    print("window is ", window_data)
-                    print("label is ", activity_label)
-                    print("user is ", user_label)
-                    printfirst = False
-                # Append processed data and labels
-                data.append(reshaped_data)
-                labels.append(combined_label)
-
-        # Concatenate all data and labels
-        if data:
-            data = np.concatenate(data, axis=0).astype(np.float32)
-            labels = np.concatenate(labels, axis=0).astype(np.float32)
-
-            # Save to .npy files for next use
-            np.save(os.path.join('dataset', args.dataset, f"data_{args.dataset_version}_{name}.npy"), data)
-            np.save(os.path.join('dataset', args.dataset, f"label_{args.dataset_version}_{name}.npy"), labels)
-            
-            print(f"Data and labels saved and returned. Data shape: {data.shape}, Label shape: {labels.shape}")
-            return data, labels
-        else:
-            print("No data processed. Check input folder and file formats.")
+        print("No data processed. Check input folder and file formats.")
 
 
-def prepare_datasets_participants(args, training_rate=0.8, seed=None):
+def prepare_datasets_participants(args, training_rate=0.8, seed=None, loocv=False, round=None):
 
     """
     Arguments:
@@ -364,42 +381,85 @@ def prepare_datasets_participants(args, training_rate=0.8, seed=None):
         - make the split, make sure special participants are inside
         - return train, valid and the test users that have to be used in testing
     """
-
+    # set_seeds(seed)
     if args.case_study == "cv":
         if args.dataset_cfg.user_ids == []:
             user_ids_array = np.array([i for i in range(1, args.dataset_cfg.user_label_size + 1)])
         else:
             user_ids_array = np.array(args.dataset_cfg.user_ids)
-        train_users, valid_users, test_users = select_participants(args.mode, args.case_study, user_ids_array, args.dataset_cfg.required_user_ids, training_rate, seed)
+        train_users, valid_users, test_users = select_participants(user_ids_array, args.dataset_cfg.required_user_ids,
+                                                                    training_rate, test=False, loocv=loocv, round=round)
         
+
         # train_users = np.array([12, 25, 1])
         # valid_users = np.array([47, 48, 2])
 
         data_train, labels_train = accumulate_participant_files(args, "train", train_users)
         data_val, labels_val = accumulate_participant_files(args, "val", valid_users)
-        data_test, labels_test = accumulate_participant_files(args, "test", test_users)
+
         # print("training data shape", data_train.shape)
         # print("training label shape", labels_train.shape)
         # print("validation data shape", data_val.shape)
         # print("validation label shape", labels_val.shape)
-        # print("testing data shape", data_test.shape)
-        # print("testing label shape", labels_test.shape)
+
 
 
         unique_label_train, counts_train = np.unique(labels_train[:, :, :1], return_counts=True)
         unique_label_vali, counts_vali = np.unique(labels_val[:, :, :1], return_counts=True)
-        unique_label_test, counts_test = np.unique(labels_test[:, :, :1], return_counts=True)
+            
         # print('Train label distribution: ', dict(zip(unique_label_train, counts_train)))
         # print('Validation label distribution: ', dict(zip(unique_label_vali, counts_vali)))
-        # print('Test label distribution: ', dict(zip(unique_label_test, counts_test)))
+
 
         labels_train = labels_train[:, 0, args.dataset_cfg.activity_label_index]
-        # labels_test = labels_test[:, 0, args.dataset_cfg.activity_label_index]
         labels_val = labels_val[:, 0, args.dataset_cfg.activity_label_index]
-        return data_train, labels_train, data_val, labels_val, data_test, labels_test
-
+        
+        if len(test_users) > 0:
+            print("Also returning test data...")
+            data_test, labels_test = accumulate_participant_files(args, "test", test_users)
+            unique_label_test, counts_test = np.unique(labels_test[:, :, :1], return_counts=True)
+            print('Test label distribution: ', dict(zip(unique_label_test, counts_test)))
+            # labels_test = labels_test[:, 0, args.dataset_cfg.activity_label_index]
+            # print("testing data shape", data_test.shape)
+            # print("testing label shape", labels_test.shape)
+            return data_train, labels_train, data_val, labels_val, data_test, labels_test
+    
+        return data_train, labels_train, data_val, labels_val, None, None
     elif args.case_study == "d2d":
-        raise NotImplementedError
+        if args.dataset_cfg.user_ids == []:
+            user_ids_array = np.array([i for i in range(1, args.dataset_cfg.user_label_size + 1)])
+        else:
+            user_ids_array = np.array(args.dataset_cfg.user_ids)
+        train_users, valid_users, _ = select_participants(user_ids_array, args.dataset_cfg.required_user_ids,
+                                                                    training_rate, test=True)
+        
+
+
+
+        data_train, labels_train = accumulate_participant_files(args, "train", train_users)
+        data_val, labels_val = accumulate_participant_files(args, "val", valid_users)
+
+        unique_label_train, counts_train = np.unique(labels_train[:, :, :1], return_counts=True)
+        unique_label_vali, counts_vali = np.unique(labels_val[:, :, :1], return_counts=True)
+            
+        # print('Train label distribution: ', dict(zip(unique_label_train, counts_train)))
+        # print('Validation label distribution: ', dict(zip(unique_label_vali, counts_vali)))
+
+
+        labels_train = labels_train[:, 0, args.dataset_cfg.activity_label_index]
+        labels_val = labels_val[:, 0, args.dataset_cfg.activity_label_index]
+        
+        if len(test_users) > 0:
+            print("Also returning test data...")
+            data_test, labels_test = accumulate_participant_files(args, "test", test_users)
+            unique_label_test, counts_test = np.unique(labels_test[:, :, :1], return_counts=True)
+            print('Test label distribution: ', dict(zip(unique_label_test, counts_test)))
+            # labels_test = labels_test[:, 0, args.dataset_cfg.activity_label_index]
+            # print("testing data shape", data_test.shape)
+            # print("testing label shape", labels_test.shape)
+            return data_train, labels_train, data_val, labels_val, data_test, labels_test
+    
+        return data_train, labels_train, data_val, labels_val, None, None    
     elif args.case_study == "cross24":
         raise NotImplementedError
     else:
@@ -657,6 +717,279 @@ class Preprocess4Mask:
         return instance_mask, np.array(mask_pos_index), np.array(seq)
 
 
+class Preprocess4Sample(Pipeline):
+
+    def __init__(self, seq_len, temporal=0.4, temporal_range=[0.8, 1.2]):
+        super().__init__()
+        self.seq_len = seq_len
+        print("sequence length", self.seq_len)
+        self.temporal = temporal
+        self.temporal_range = temporal_range
+
+    def __call__(self, instance):
+        # print("input", instance.shape)
+
+        if instance.shape[0] == self.seq_len:
+            # print("output first", instance.shape)
+            return instance
+        if self.temporal > 0:
+            temporal_prob = np.random.random()
+            if temporal_prob < self.temporal:
+                x = np.arange(instance.shape[0])
+                ratio_random = np.random.random() * (self.temporal_range[1] - self.temporal_range[0]) + self.temporal_range[0]
+                seq_len_scale = int(np.round(ratio_random * self.seq_len))
+                index_rand = np.random.randint(0, high=instance.shape[0] - seq_len_scale)
+                instance_new = np.zeros((self.seq_len, instance.shape[1]))
+                for i in range(instance.shape[1]):
+                    f = interpolate.interp1d(x, instance[:, i], kind='linear')
+                    x_new = index_rand + np.linspace(0, seq_len_scale, self.seq_len)
+                    instance_new[:, i] = f(x_new)
+                # print("output second", instance_new.shape)
+                return instance_new
+        index_rand = np.random.randint(0, high=instance.shape[0] - self.seq_len)
+        ret = instance[index_rand:index_rand + self.seq_len, :]
+        # print("output third", ret.shape)
+
+        return ret.astype(np.float32)
+
+
+class Preprocess4Noise(Pipeline):
+
+    def __init__(self, p=1.0, mu=0.0, var=0.1):
+        super().__init__()
+        self.p = p
+        self.mu = mu
+        self.var = var
+
+    def __call__(self, instance):
+        if np.random.random() < self.p:
+            instance += np.random.normal(self.mu, self.var, instance.shape)
+        return instance
+
+
+class Preprocess4Rotation(Pipeline):
+
+    def __init__(self, p=0.2, sensor_dimen=3):
+        super().__init__()
+        self.sensor_dimen = sensor_dimen
+        self.p = p
+
+    def __call__(self, instance):
+        if np.random.random() < self.p:
+            return self.rotate_random(instance).astype(np.float32)
+        return instance
+    
+    def rotate_random(self, instance):
+        # print("input ", instance.shape)
+        instance_new = instance.reshape(instance.shape[0], instance.shape[1] // self.sensor_dimen, self.sensor_dimen)
+        rotation_matrix = special_ortho_group.rvs(self.sensor_dimen)
+        for i in range(instance_new.shape[1]):
+            instance_new[:, i, :] = np.dot(instance_new[:, i, :], rotation_matrix)
+        ret = instance_new.reshape(instance.shape[0], instance.shape[1])
+        # print("output ", ret.shape)
+        return ret
+
+
+class Preprocess4Permute:
+    def __init__(self, p=0.2, segment_size=4):
+        self.segment_size = segment_size
+        self.p = p  
+
+    def __call__(self, instance):
+        if np.random.random() < self.p:
+            original_shape = instance.shape
+            seq_len = original_shape[0]
+            
+            # Ensure the sequence length is divisible by segment_size
+            remainder = seq_len % self.segment_size
+            
+            if remainder != 0:
+                # Option 1: Truncate the sequence to the nearest multiple
+                trunc_len = seq_len - remainder
+                instance = instance[:trunc_len]
+                print(f"Truncated sequence from {seq_len} to {trunc_len}")
+
+                # Option 2: Pad instead of truncating (uncomment if padding is preferred)
+                # pad_width = self.segment_size - remainder
+                # instance = np.pad(instance, ((0, pad_width), (0, 0)), mode='constant')
+                # print(f"Padded sequence from {seq_len} to {seq_len + pad_width}")
+
+            # Reshape into segments
+            instance = instance.reshape(self.segment_size, -1, original_shape[1])
+
+            # Randomly permute segments
+            order = np.random.permutation(self.segment_size)
+            instance = instance[order, :, :]
+
+            # Reshape back to original
+            res = instance.reshape(-1, original_shape[1])
+            return res.astype(np.float32)
+        
+        return instance
+    
+
+class Preprocess4Scaling(Pipeline):
+    def __init__(self, p=0.2, sigma=0.5):
+        super().__init__()
+        self.p = p  
+        self.sigma = sigma  
+
+    def __call__(self, instance):
+        if np.random.random() < self.p:
+            scaled_instance = self.scale(instance)
+            # plot_signals(instance, scaled_instance) 
+            return scaled_instance
+        return instance  
+
+    def scale(self, x):
+        """
+        Apply the same random scaling factor to all features.
+        x.shape = (time_steps, features)
+        """
+        factor = np.random.normal(loc=1.0, scale=self.sigma, size=(x.shape[0], x.shape[1]))  
+        scaled_x = np.multiply(x, factor).astype(np.float32)
+
+        return scaled_x
+
+
+class Preprocess4Shuffle(Pipeline):
+    def __init__(self, p=0.2, seed=None):
+        super().__init__()
+        self.p = p  
+        self.seed = seed 
+
+    def __call__(self, instance):
+        if np.random.random() < self.p:
+            res = self.shuffle(instance)
+            # plot_signals(instance, res)
+            return res.astype(np.float32)
+        return instance  
+
+    def shuffle(self, x):
+        """
+        Randomly permutes the feature dimensions (columns) while keeping time steps intact.
+        """
+        if self.seed is not None:
+            np.random.seed(self.seed)  
+
+        p = np.random.permutation(x.shape[1])  
+        return x[:, p]  
+
+
+class Preprocess4Flip(Pipeline):
+
+    def __init__(self, p=0.2):
+        super().__init__()
+        self.p = p
+
+    def __call__(self, instance):
+        if np.random.random() < self.p:
+            res = instance[::-1, :].copy()
+            # plot_signals(instance, res)
+            return res.astype(np.float32)
+        return instance
+
+
+class Preprocess4TimeWarp(Pipeline):
+    def __init__(self, p=0.2, sigma=0.2, num_knots=4):
+        super().__init__()
+        self.p = p
+        self.sigma = sigma
+        self.num_knots = num_knots
+
+    def __call__(self, instance):
+        if np.random.random() < self.p:
+            res = self.time_warp(instance)
+            # plot_signals(instance, res) 
+            return res.astype(np.float32)
+        return instance
+
+    def time_warp(self, X):
+        """
+        Apply time warping to the input time-series X.
+        """
+        time_stamps = np.arange(X.shape[0])
+        knot_xs = np.linspace(0, X.shape[0] - 1, self.num_knots + 2)
+        spline_ys = np.random.normal(loc=1.0, scale=self.sigma, size=(X.shape[1], self.num_knots + 2))
+
+        # Generate smooth time distortions using cubic spline interpolation
+        distorted_time = np.array([
+            CubicSpline(knot_xs, spline_ys[i, :])(time_stamps)
+            for i in range(X.shape[1])
+        ])
+
+        # Normalize to maintain original time range
+        distorted_time = np.cumsum(distorted_time, axis=1)
+        distorted_time = (distorted_time / distorted_time[:, -1][:, np.newaxis]) * (X.shape[0] - 1)
+
+        # Apply time distortion using linear interpolation
+        X_warped = np.array([
+            np.interp(time_stamps, distorted_time[i], X[:, i])
+            for i in range(X.shape[1])
+        ]).T  # Transpose back to original shape
+
+        return X_warped
+
+
+class Preprocess4Negation(Pipeline):
+    def __init__(self, p=0.2):
+        super().__init__()
+        self.p = p 
+
+    def __call__(self, instance):
+        if np.random.random() < self.p:
+            res = self.negate(instance)
+            # plot_signals(instance, res) 
+            return res.astype(np.float32)
+        return instance 
+
+    def negate(self, X):
+        return X * -1 
+    
+
+class Preprocess4STFT(Pipeline):
+
+    def __init__(self, window=50, cut_off_frequency=17, fs=20):
+        super().__init__()
+        self.window = window
+        self.cut_off_frequency = cut_off_frequency
+        self.fs = fs
+
+    def __call__(self, instance):
+        instance_new = []
+        for i in range(instance.shape[1]):
+            f, t, Zxx = signal.stft(instance[:, i], self.fs, nperseg=self.window)
+            instance_new.append(Zxx[:self.cut_off_frequency, :])
+        instance_new = np.abs(np.vstack(instance_new).transpose([1, 0]))
+        return instance_new
+
+
+class Preprocess4GenerateHigh(Pipeline):
+    def __init__(self, r=(32,2), high=True):
+        super().__init__()
+        self.r = r
+        self.high = high
+
+    def __call__(self, sample):
+        # r: int, radius of the mask
+        images = torch.unsqueeze(sample, 1)
+        mask = mask_radial(torch.zeros([images.shape[2], images.shape[3]]), self.r)
+        bs, c, h, w = images.shape
+        x = images.reshape([bs * c, h, w])
+        fd = torch.fft.fftshift(torch.fft.fftn(x, dim=(-2, -1)))  # Shift: low frequencies in the center
+        mask = mask.unsqueeze(0).repeat([bs * c, 1, 1])
+        
+        if self.high:
+            fd = fd * mask  # Apply high-pass filtering
+        else:
+            fd = fd * (1 - mask)  # Apply low-pass filtering
+
+        processed_sample = torch.fft.ifftn(torch.fft.ifftshift(fd), dim=(-2, -1)).real
+        res = processed_sample.reshape(bs, c, h, w)
+        plot_signals(sample, res) 
+        return res
+
+
 class IMUDataset(Dataset):
     """ Load sentence pair (sequential or random order) from corpus """
     def __init__(self, data, labels, pipeline=[]):
@@ -712,7 +1045,7 @@ class LIBERTDataset4Pretrain(Dataset):
         for proc in self.pipeline:
             instance = proc(instance)
         mask_seq, masked_pos, seq = instance
-        return torch.from_numpy(mask_seq), torch.from_numpy(masked_pos).long(), torch.from_numpy(seq)
+        return torch.from_numpy(mask_seq), torch.from_numpy(masked_pos).long(), torch.from_numpy(seq), index
 
     def __len__(self):
         return len(self.data)
@@ -722,7 +1055,7 @@ def handle_argv(target, config_train, prefix):
     parser = argparse.ArgumentParser(description='PyTorch LIMU-BERT Model')
     parser.add_argument('case_study', type=str, help='The type of study I am running', choices=['cv', 'd2d', 'cross24'])
     parser.add_argument('model_version', type=str, help='Model config')
-    parser.add_argument('dataset', type=str, help='Dataset name', choices=['hhar', 'motion', 'uci', 'shoaib', 'c24'])
+    parser.add_argument('dataset', type=str, help='Dataset name', choices=['hhar', 'motion', 'uci', 'shoaib', 'C24'])
     parser.add_argument('dataset_version',  type=str, help='Dataset version', choices=['10_100', '20_120', '25_125'])
     parser.add_argument('-g', '--gpu', type=str, default=None, help='Set specific GPU')
     parser.add_argument('-f', '--model_file', type=str, default=None, help='Pretrain model file')
@@ -757,7 +1090,7 @@ def handle_argv(target, config_train, prefix):
 def handle_argv_simple():
     parser = argparse.ArgumentParser(description='PyTorch LIMU-BERT Model')
     parser.add_argument('model_file', type=str, default=None, help='Pretrain model file')
-    parser.add_argument('dataset', type=str, help='Dataset name', choices=['hhar', 'motion', 'uci', 'shoaib', 'c24','merge'])
+    parser.add_argument('dataset', type=str, help='Dataset name', choices=['hhar', 'motion', 'uci', 'shoaib', 'C24','merge'])
     parser.add_argument('dataset_version',  type=str, help='Dataset version', choices=['10_100', '20_120', '25_125'])
     args = parser.parse_args()
     dataset_cfg = load_dataset_stats(args.dataset, args.dataset_version)
@@ -796,7 +1129,7 @@ def load_pretrain_config(args):
     if model_cfg.feature_num > dataset_cfg.dimension:
         print("Bad Crossnum in model cfg")
         sys.exit()
-    set_seeds(train_cfg.seed)
+    # set_seeds(train_cfg.seed)
     return train_cfg, model_cfg, mask_cfg, dataset_cfg
 
 
