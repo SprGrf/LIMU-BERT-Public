@@ -62,8 +62,6 @@ def generate_embedding_or_output(args, save=False, output_embed=True):
     save_name = 'embed_' + args.model_file.split('.')[0] + '_' + args.dataset + '_' + args.dataset_version
 
     trainer.run_mem(func_forward, None, data_loader_train, args.pretrain_model, name=save_name + "_train")
-    # trainer.run_mem(func_forward, None, data_loader_valid, args.pretrain_model, name=save_name + "_valid")
-    # trainer.run_mem(func_forward, None, data_loader_test, args.pretrain_model, name=save_name + "_test")
 
     return
 
@@ -76,8 +74,6 @@ def load_embedding_label(model_file, dataset, dataset_version):
 
 def load_part_file(filename):
     loaded_results, loaded_labels = torch.load(filename, weights_only=False)  
-    # print(type(loaded_labels))
-    # print(type(loaded_results))
 
     return loaded_results, loaded_labels
 
@@ -86,7 +82,3 @@ if __name__ == "__main__":
     mode = "base"
     args = handle_argv('pretrain_' + mode, 'pretrain.json', mode)
     generate_embedding_or_output(args=args, output_embed=True, save=save)
-
-    # label_index = 1
-    # label_names, label_num = load_dataset_label_names(args.dataset_cfg, label_index)
-    # data_tsne, labels_tsne = plot_embedding(output, labels, label_index=label_index, reduce=1000, label_names=label_names)

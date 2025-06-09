@@ -1,63 +1,4 @@
 {
-    "hhar_20_120": {
-        "sr": 20,
-        "seq_len": 120,
-        "dimension": 6,
-        "activity_label_index": 2,
-        "activity_label_size": 6,
-        "activity_label": [
-            "bike", "sit", "downstairs", "upstairs", "stand", "walk"
-        ],
-        "user_label_index": 0,
-        "user_label_size": 9,
-        "model_label_index": 1,
-        "model_label_size": 3,
-        "size": 9166
-    },
-    "motion_20_120": {
-        "sr": 20,
-        "seq_len": 120,
-        "dimension": 6,
-        "activity_label_index": 0,
-        "activity_label_size": 6,
-        "activity_label": [
-            "downstairs", "upstairs", "sitting", "standing", "walking", "jogging"
-        ],
-        "user_label_index": 1,
-        "user_label_size": 24,
-        "size": 4534
-    },
-    "uci_20_120": {
-        "sr": 20,
-        "seq_len": 120,
-        "dimension": 6,
-        "activity_label_index": 0,
-        "activity_label_size": 6,
-        "activity_label": [
-            "walking", "upstairs", "downstairs", "sitting", "standing", "lying"
-        ],
-        "user_label_index": 1,
-        "user_label_size": 30,
-        "size": 2088
-    },
-    "shoaib_20_120": {
-        "sr": 20,
-        "seq_len": 120,
-        "dimension": 9,
-        "activity_label_index": 0,
-        "activity_label_size": 7,
-        "activity_label": [
-            "walking", "sitting", "standing", "jogging", "biking", "upstairs" , "downstairs"
-        ],
-        "position_label_index": 1,
-        "position_label_size": 5,
-        "position_label": [
-            "left_pocket", "right_pocket", "wrist", "upper_arm", "belt"
-        ],
-        "user_label_index": 2,
-        "user_label_size": 10,
-        "size": 10500
-    },
     "C24_25_125": {
         "sr": 25,
         "seq_len": 125,
@@ -82,6 +23,91 @@
          93, 94, 95, 101, 108, 114, 116, 121, 123, 124, 126, 127, 129, 136, 137,
           138, 140, 147, 149, 151],             
         "size": 1
-    }
+    },
+    "DSA_25_125": {
+        "sr": 25,
+        "seq_len": 125,
+        "dimension": 3,
+        "activity_label_index": 0,
+        "activity_label_size": 7,
+        "activity_label": [
+            "lying", "sitting", "standing", "walking", "running", "biking" , "stairs"
+        ],
+        "user_label_index": 1,
+        "user_label_size": 8,            
+        "size": 1
+    },
+    "GOTOV_25_125": {
+        "sr": 25,
+        "seq_len": 125,
+        "dimension": 3,
+        "activity_label_index": 0,
+        "activity_label_size": 7,
+        "activity_label": [
+            "lying", "sitting", "standing", "walking", "running", "biking" , "stairs"
+        ],
+        "user_label_index": 1,
+        "user_label_size": 35,
+        "user_ids": [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+                     23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36],            
+        "size": 1
+    },    
+    "HHAR_25_125": {
+        "sr": 25,
+        "seq_len": 125,
+        "dimension": 3,
+        "activity_label_index": 0,
+        "activity_label_size": 7,
+        "activity_label": [
+            "lying", "sitting", "standing", "walking", "running", "biking" , "stairs"
+        ],
+        "user_label_index": 1,
+        "user_label_size": 9,            
+        "size": 1
+    },      
+    "MHEALTH_25_125": {
+        "sr": 25,
+        "seq_len": 125,
+        "dimension": 3,
+        "activity_label_index": 0,
+        "activity_label_size": 7,
+        "activity_label": [
+            "lying", "sitting", "standing", "walking", "running", "biking" , "stairs"
+        ],
+        "user_label_index": 1,
+        "user_label_size": 10,            
+        "size": 1
+    }, 
+    "PAMAP2_25_125": {
+        "sr": 25,
+        "seq_len": 125,
+        "dimension": 3,
+        "activity_label_index": 0,
+        "activity_label_size": 7,
+        "activity_label": [
+            "lying", "sitting", "standing", "walking", "running", "biking" , "stairs"
+        ],
+        "user_label_index": 1,
+        "user_label_size": 8,            
+        "size": 1
+    },
+    "selfBACK_25_125": {
+        "sr": 25,
+        "seq_len": 125,
+        "dimension": 3,
+        "activity_label_index": 0,
+        "activity_label_size": 7,
+        "activity_label": [
+            "lying", "sitting", "standing", "walking", "running", "biking" , "stairs"
+        ],
+        "user_label_index": 1,
+        "user_label_size": 33,   
+        "user_ids": [26, 27, 28, 29, 
+                     30, 31, 33, 34, 36, 39,
+                     40, 41, 42, 43, 44, 46, 47, 48, 49,
+                     50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+                     60, 61, 62, 63],          
+        "size": 1
+    }    
 }
 

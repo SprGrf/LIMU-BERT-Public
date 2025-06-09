@@ -25,34 +25,16 @@ from utils import set_seeds, get_device, get_sample_weights \
 
 
 def main(args, training_rate, balance=False, balance_ratio=0, loocv=False, round=None):
-    wandb.init(project='pretraining', entity='spgaryf')
 
     train_cfg, model_cfg, mask_cfg, dataset_cfg = load_pretrain_config(args)
 
-    wandb.config.balance = balance
-    wandb.config.balance_ratio = balance_ratio
-    wandb.config.hidden = model_cfg.hidden
-    wandb.config.n_layers = model_cfg.n_layers
-
-    
-    norm_acc = False if args.dataset == 'C24' else True
+    norm_acc = False
     pipeline = [Preprocess4Normalization(model_cfg.feature_num, norm_acc=norm_acc),
             Preprocess4Rotation(), Preprocess4Mask(mask_cfg)]
         
     data_train, label_train, data_vali, _, _, _ = prepare_datasets_participants(args, training_rate, seed=train_cfg.seed, loocv=loocv, round=round)
     if balance:
         data_train, label_train = balance_dataset(data_train, label_train, balance_ratio)
-
-    # print("data train shape is", data_train.shape)
-    # print("data vali shape is", data_vali.shape)
-    # print("label train shape is", label_train.shape)
-    # if data_vali.shape[0] > data_train.shape[0]:
-    #     print("shuffling and cutting")
-    #     np.random.shuffle(data_vali)
-    #     num_samples = int(0.1*data_train.shape[0])
-    #     data_vali = data_vali[:num_samples]
-    #     print("new data vali shape is", data_vali.shape)
-
 
 
     ## Sampler dataloader
@@ -84,7 +66,11 @@ def main(args, training_rate, balance=False, balance_ratio=0, loocv=False, round
 
 
     device = get_device(args.gpu)
-    trainer = train.Trainer(train_cfg, model, optimizer, args.save_path, device)
+    if round != None:
+        save_path = args.save_path + "_round_" + str(round)
+    else:
+        save_path = args.save_path
+    trainer = train.Trainer(train_cfg, model, optimizer, save_path, device)
 
     def func_loss(model, batch):
         mask_seqs, masked_pos, seqs, _ = batch
@@ -119,14 +105,6 @@ def main(args, training_rate, balance=False, balance_ratio=0, loocv=False, round
         trainer.pretrain(func_loss, func_forward, func_evaluate, data_loader_train, data_loader_vali, 
                          model_file=None)
 
-    # if hasattr(args, 'pretrain_model'):
-    #     print("Starting pretraining...")
-    #     trainer.pretrain(weighted_func_loss, func_forward, func_evaluate, data_loader_train, data_loader_vali,
-    #                      model_file=args.pretrain_model, sample_weights=sample_weights)
-    # else:
-    #     trainer.pretrain(weighted_func_loss, func_forward, func_evaluate, data_loader_train, data_loader_vali, 
-    #                      model_file=None, sample_weights=sample_weights)
-        
 if __name__ == "__main__":
     mode = "base"
     balance = False
@@ -148,7 +126,6 @@ if __name__ == "__main__":
         print("total users are ",total_users)
         for round in range(min(total_users,rounds)):
             print("ROUND ", round)              
-            args.save_path += "_round_" + str(round)
             main(args, training_rate, balance = balance, balance_ratio = balance_ratio, loocv=loocv, round=round)
     elif args.case_study == "d2d":
         args.save_path += "_d2d"

@@ -31,32 +31,6 @@ def classify_embeddings(args, label_index, training_rate, label_rate, balance=Fa
     print(model_cfg)
     label_names, label_num = load_dataset_label_names(dataset_cfg, label_index)
 
-
-    # #######################################################3
-    # data_train, label_train, data_vali, label_vali, data_test, label_test \
-    #     = prepare_classifier_dataset(data, labels, label_index=label_index, training_rate=training_rate
-    #                                  , label_rate=label_rate, merge=model_cfg.seq_len, seed=train_cfg.seed
-    #                                  , balance=balance)
-    # print("After preparation of classifier data shape")
-    # print(data_train.shape)
-    # print(data_vali.shape)
-    # print(data_test.shape)
-    # data_set_train = IMUDataset(data_train, label_train)
-    # data_set_vali = IMUDataset(data_vali, label_vali)
-    # data_set_test = IMUDataset(data_test, label_test)
-    # data_loader_train = DataLoader(data_set_train, shuffle=True, batch_size=train_cfg.batch_size)
-    # data_loader_vali = DataLoader(data_set_vali, shuffle=False, batch_size=train_cfg.batch_size)
-    # data_loader_test = DataLoader(data_set_test, shuffle=False, batch_size=train_cfg.batch_size)
-    
-    
-    # unique_label_train, counts_train = np.unique(label_train, return_counts=True)
-    # unique_label_vali, counts_vali = np.unique(label_vali, return_counts=True)
-    # unique_label_test, counts_test = np.unique(label_test, return_counts=True)
-    # print('Train label distribution: ', dict(zip(unique_label_train, counts_train)))
-    # print('Validation label distribution: ', dict(zip(unique_label_vali, counts_vali)))
-    # print('Test label distribution: ', dict(zip(unique_label_test, counts_test)))
-    # ##############################################################
-    
     criterion = nn.CrossEntropyLoss()
     model = fetch_classifier(method, model_cfg, input=72, output=label_num)
     optimizer = torch.optim.Adam(params=model.parameters(), lr=train_cfg.lr)  # , weight_decay=0.95
@@ -77,9 +51,7 @@ def classify_embeddings(args, label_index, training_rate, label_rate, balance=Fa
         stat = stat_acc_f1_rec(label.cpu().numpy(), predicts.cpu().numpy())
         return stat
 
-    # trainer.train(func_loss, func_forward, func_evaluate, data_loader_train, data_loader_test, data_loader_vali)
     label_test, label_estimate_test = trainer.train_parts(args, func_loss, func_forward, func_evaluate, label_rate, label_index, balance, model_file=args.pretrain_model)    
-    # label_estimate_test = trainer.run(func_forward, None, data_loader_test)
     return label_test, label_estimate_test
 
 

@@ -148,14 +148,9 @@ class Transformer(nn.Module):
         h = self.embed(x)
 
         for _ in range(self.n_layers):
-            # h = block(h, mask)
             h = self.attn(h)
-            # print("after attention layer")
-            # print(h.shape)
             h = self.norm1(h + self.proj(h))
-            # print(h.shape)
             h = self.norm2(h + self.pwff(h))
-            # print(h.shape)
         return h
 
 
@@ -173,8 +168,6 @@ class LIMUBertModel4Pretrain(nn.Module):
 
     def forward(self, input_seqs, masked_pos=None):
         h_masked = self.transformer(input_seqs)
-        # print("after transformer size")
-        # print(h_masked.shape)
         if self.output_embed:
             return h_masked
         if masked_pos is not None:
@@ -335,7 +328,6 @@ class ClassifierCNN2D(nn.Module):
             if self.activ:
                 h = F.relu(h)
             h = bn(self.pool(h))
-            # h = self.pool(h)
         h = self.flatten(h)
         if self.dropout:
             h = F.dropout(h, training=training)
@@ -381,8 +373,6 @@ class ClassifierCNN1D(nn.Module):
             if self.activ:
                 h = F.relu(h)
             h = self.pool(h)
-            # h = bn(h)
-            # h = self.pool(h)
         h = self.flatten(h)
         if self.dropout:
             h = F.dropout(h, training=training)
@@ -450,15 +440,6 @@ class BenchmarkDCNN(nn.Module):
         return h
 
     def normalize(self, x, k=1, alpha=2e-4, beta=0.75):
-        # x = x.view(x.size(0), x.size(1) // 5, 5, x.size(2), x.size(3))#
-        # y = x.clone()
-        # for s in range(x.size(0)):
-        #     for j in range(x.size(1)):
-        #         for i in range(5):
-        #             norm = alpha * torch.sum(torch.square(y[s, j, i, :, :])) + k
-        #             norm = torch.pow(norm, -beta)
-        #             x[s, j, i, :, :] = y[s, j, i, :, :] * norm
-        # x = x.view(x.size(0), x.size(1) * 5, x.size(3), x.size(4))
         return x
 
 

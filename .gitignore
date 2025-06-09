@@ -1,12 +1,11 @@
-#/dataset/uci/
-#/dataset/motion/
-#/dataset/hhar/
-#/dataset/shoaib/
+
 /logs/
 /embed/
 #/saved/
 /LIMUBERT/
 __pycache__/
-dataset/C24
+dataset/
 /saved/
 /wandb
+*.pkl
+*.pdf

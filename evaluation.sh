@@ -1,0 +1,8 @@
+#!/bin/bash
+sbatch -o logs/evaluation_DSA.out --account=es_holz --ntasks=1 --cpus-per-task=6 --gpus=rtx_4090:1 --gres=gpumem:7552m --time=300:00:00 --job-name=evaluation_DSA --mem-per-cpu=2048 --tmp=50000  --wrap="python -u evaluate.py cv v3_v3 DSA 25_125 -f bert_classifier_gru -l 0"
+sbatch -o logs/evaluation_MHEALTH.out --account=es_holz --ntasks=1 --cpus-per-task=6 --gpus=rtx_4090:1 --gres=gpumem:7552m --time=300:00:00 --job-name=evaluation_MHEALTH --mem-per-cpu=2048 --tmp=50000  --wrap="python -u evaluate.py cv v3_v3 MHEALTH 25_125 -f bert_classifier_gru -l 0"
+sbatch -o logs/evaluation_GOTOV.out --account=es_holz --ntasks=1 --cpus-per-task=6 --gpus=rtx_4090:1 --gres=gpumem:7552m --time=300:00:00 --job-name=evaluation_GOTOV --mem-per-cpu=2048 --tmp=50000  --wrap="python -u evaluate.py cv v3_v3 GOTOV 25_125 -f bert_classifier_gru -l 0"
+sbatch -o logs/evaluation_PAMAP2.out --account=es_holz --ntasks=1 --cpus-per-task=6 --gpus=rtx_4090:1 --gres=gpumem:7552m --time=300:00:00 --job-name=evaluation_PAMAP2 --mem-per-cpu=2048 --tmp=50000  --wrap="python -u evaluate.py cv v3_v3 PAMAP2 25_125 -f bert_classifier_gru -l 0"
+sbatch -o logs/evaluation_HHAR.out --account=es_holz --ntasks=1 --cpus-per-task=6 --gpus=rtx_4090:1 --gres=gpumem:7552m --time=300:00:00 --job-name=evaluation_HHAR --mem-per-cpu=2048 --tmp=50000  --wrap="python -u evaluate.py cv v3_v3 HHAR 25_125 -f bert_classifier_gru -l 0"
+sbatch -o logs/evaluation_selfBACK.out --account=es_holz --ntasks=1 --cpus-per-task=6 --gpus=rtx_4090:1 --gres=gpumem:7552m --time=300:00:00 --job-name=evaluation_selfBACK --mem-per-cpu=2048 --tmp=50000  --wrap="python -u evaluate.py cv v3_v3 selfBACK 25_125 -f bert_classifier_gru -l 0"
+

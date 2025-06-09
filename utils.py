@@ -223,13 +223,17 @@ def select_participants(users_array, special_participant_list, training_rate, te
 
     if not loocv:
         while True:
-            np.random.shuffle(users_array)
+
+            users_list = users_array.tolist()
+            random.shuffle(users_list)
+            users_array = np.array(users_list)
+
             if test:
                 num_train = int(len(users_array) * training_rate)
                 num_remaining = len(users_array) - num_train
                 num_val = num_remaining // 2
                 train_participants = users_array[:num_train]
-                val_participants = users_array[num_train:num_train + num_val]
+                val_participants = users_array[num_train:num_train + num_val] 
                 test_participants = users_array[num_train + num_val:]
         
                 if (all(special_set.intersection(train_participants) for special_set in special_sets) and
@@ -247,7 +251,7 @@ def select_participants(users_array, special_participant_list, training_rate, te
                 if (all(special_set.intersection(train_participants) for special_set in special_sets) and
                     all(special_set.intersection(val_participants) for special_set in special_sets)):
                     print("train users are", sorted(train_participants))
-                    print("validation users are", sorted(val_participants))
+                    print("validation users are", val_participants)
                     print("number of validation users", len(val_participants))
 
                     return train_participants, val_participants, []
@@ -256,10 +260,10 @@ def select_participants(users_array, special_participant_list, training_rate, te
         if round == 0:
             reordered_users_array = users_array 
         else:
-            reordered_users_array = users_array[-round:] + users_array[:-round] 
+            reordered_users_array = list(users_array)[-round:] + list(users_array)[:-round] 
         train_participants = reordered_users_array[:-2]
-        val_participants = reordered_users_array[-2]
-        test_participants = reordered_users_array[-1]
+        val_participants = [reordered_users_array[-2]]
+        test_participants = [reordered_users_array[-1]]
 
         print("train users are", sorted(train_participants))
         print("validation users are", sorted(val_participants))
@@ -311,8 +315,8 @@ def accumulate_participant_files(args, name, users_list):
 
             if printfirst:
                 print("window is ", window)
-                print("label is ", activity)
-                print("user is ", user)
+                # print("label is ", activity)
+                # print("user is ", user)
             # Convert window (dataframe) to numpy array
             window_data = window.to_numpy(dtype=np.float32)
 
@@ -327,13 +331,14 @@ def accumulate_participant_files(args, name, users_list):
 
             # Create corresponding labels
             activity_label = np.full((reshaped_data.shape[0], args.dataset_cfg.seq_len, 1), activity, dtype=np.int32)
-            user_label = np.full((reshaped_data.shape[0], args.dataset_cfg.seq_len, 1), user, dtype=np.int32)
+            user_label = np.full((reshaped_data.shape[0], args.dataset_cfg.seq_len, 1), participant, dtype=np.int32)
             combined_label = np.concatenate((activity_label, user_label), axis=-1)  
-            if printfirst:
-                print("window is ", window_data)
-                print("label is ", activity_label)
-                print("user is ", user_label)
-                printfirst = False
+            # if printfirst:
+            #     print("window is ", window_data)
+            #     print("label is ", activity_label)
+            #     print("user is ", user_label)
+            
+            printfirst = False
             # Append processed data and labels
             data.append(reshaped_data)
             labels.append(combined_label)
@@ -387,12 +392,14 @@ def prepare_datasets_participants(args, training_rate=0.8, seed=None, loocv=Fals
             user_ids_array = np.array([i for i in range(1, args.dataset_cfg.user_label_size + 1)])
         else:
             user_ids_array = np.array(args.dataset_cfg.user_ids)
-        train_users, valid_users, test_users = select_participants(user_ids_array, args.dataset_cfg.required_user_ids,
+        print("users are", user_ids_array)
+        if args.dataset != "C24":
+            train_users, valid_users, test_users = select_participants(user_ids_array, args.dataset_cfg.required_user_ids,
+                                                                    training_rate, test=True, loocv=loocv, round=round)
+        else: # no need for test participants for C24. 
+            train_users, valid_users, _ = select_participants(user_ids_array, args.dataset_cfg.required_user_ids,
                                                                     training_rate, test=False, loocv=loocv, round=round)
-        
-
-        # train_users = np.array([12, 25, 1])
-        # valid_users = np.array([47, 48, 2])
+            test_users = args.dataset_cfg.test_user_ids
 
         data_train, labels_train = accumulate_participant_files(args, "train", train_users)
         data_val, labels_val = accumulate_participant_files(args, "val", valid_users)
@@ -433,9 +440,6 @@ def prepare_datasets_participants(args, training_rate=0.8, seed=None, loocv=Fals
         train_users, valid_users, _ = select_participants(user_ids_array, args.dataset_cfg.required_user_ids,
                                                                     training_rate, test=True)
         
-
-
-
         data_train, labels_train = accumulate_participant_files(args, "train", train_users)
         data_val, labels_val = accumulate_participant_files(args, "val", valid_users)
 
@@ -460,6 +464,22 @@ def prepare_datasets_participants(args, training_rate=0.8, seed=None, loocv=Fals
             return data_train, labels_train, data_val, labels_val, data_test, labels_test
     
         return data_train, labels_train, data_val, labels_val, None, None    
+    elif args.case_study == "d2d_test":
+        if args.dataset_cfg.user_ids == []:
+            user_ids_array = np.array([i for i in range(1, args.dataset_cfg.user_label_size + 1)])
+        else:
+            user_ids_array = np.array(args.dataset_cfg.user_ids)
+
+        if len(args.dataset_cfg.test_user_ids)>0:
+            data_test, labels_test = accumulate_participant_files(args, "test", args.dataset_cfg.test_user_ids)
+        else:
+            data_test, labels_test = accumulate_participant_files(args, "test", user_ids_array)
+
+        unique_label_test, counts_test = np.unique(labels_test[:, :, :1], return_counts=True)
+        print('Test label distribution: ', dict(zip(unique_label_test, counts_test)))
+  
+        return None, None, None, None, data_test, labels_test
+    
     elif args.case_study == "cross24":
         raise NotImplementedError
     else:
@@ -775,9 +795,9 @@ class Preprocess4Rotation(Pipeline):
         self.p = p
 
     def __call__(self, instance):
-        if np.random.random() < self.p:
-            return self.rotate_random(instance).astype(np.float32)
-        return instance
+        # if np.random.random() < self.p:
+        return self.rotate_random(instance).astype(np.float32)
+        # return instance
     
     def rotate_random(self, instance):
         # print("input ", instance.shape)
@@ -1053,9 +1073,9 @@ class LIBERTDataset4Pretrain(Dataset):
 
 def handle_argv(target, config_train, prefix):
     parser = argparse.ArgumentParser(description='PyTorch LIMU-BERT Model')
-    parser.add_argument('case_study', type=str, help='The type of study I am running', choices=['cv', 'd2d', 'cross24'])
+    parser.add_argument('case_study', type=str, help='The type of study I am running', choices=['cv', 'd2d', 'd2d_test', 'cross24'])
     parser.add_argument('model_version', type=str, help='Model config')
-    parser.add_argument('dataset', type=str, help='Dataset name', choices=['hhar', 'motion', 'uci', 'shoaib', 'C24'])
+    parser.add_argument('dataset', type=str, help='Dataset name', choices=['HHAR', 'DSA', 'MHEALTH', 'selfBACK', 'PAMAP2', 'GOTOV', 'C24'])
     parser.add_argument('dataset_version',  type=str, help='Dataset version', choices=['10_100', '20_120', '25_125'])
     parser.add_argument('-g', '--gpu', type=str, default=None, help='Set specific GPU')
     parser.add_argument('-f', '--model_file', type=str, default=None, help='Pretrain model file')
@@ -1066,6 +1086,9 @@ def handle_argv(target, config_train, prefix):
                         help='Label Index')
     parser.add_argument('-s', '--save_model', type=str, default='model',
                         help='The saved model name')
+    
+    parser.add_argument('-c', '--complex', type=bool, default=False,
+                        help='Complex training mode, for encoder trained on unlabeld and classifier on labeled data.')
     try:
         args = parser.parse_args()
     except:
@@ -1117,7 +1140,6 @@ def load_pretrain_data_config(args):
         sys.exit()
     set_seeds(train_cfg.seed)
     data = np.load(args.data_path).astype(np.float32)
-    # data = data[:,:,:3]
     labels = np.load(args.label_path).astype(np.float32)
     return data, labels, train_cfg, model_cfg, mask_cfg, dataset_cfg
 
@@ -1129,7 +1151,6 @@ def load_pretrain_config(args):
     if model_cfg.feature_num > dataset_cfg.dimension:
         print("Bad Crossnum in model cfg")
         sys.exit()
-    # set_seeds(train_cfg.seed)
     return train_cfg, model_cfg, mask_cfg, dataset_cfg
 
 
@@ -1166,13 +1187,11 @@ def load_bert_classifier_data_config(args):
 
 def load_bert_classifier_config(args):
     model_bert_cfg, model_classifier_cfg = args.model_cfg
-    print(model_bert_cfg)
     train_cfg = TrainConfig.from_json(args.train_cfg)
     dataset_cfg = args.dataset_cfg
     if model_bert_cfg.feature_num > dataset_cfg.dimension:
         print("Bad feature_num in model cfg")
         sys.exit()
-    set_seeds(train_cfg.seed)
     return train_cfg, model_bert_cfg, model_classifier_cfg, dataset_cfg
 
 def count_model_parameters(model):
